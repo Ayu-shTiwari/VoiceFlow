@@ -1,0 +1,135 @@
+/* static/style.css */
+
+/* Using the Roboto font as you suggested */
+body {
+    font-family: 'Roboto', sans-serif;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    margin: 0;
+    background-color: #eef2f7;
+    color: #333;
+    background: linear-gradient(-45deg, #ee7752, #e73c7e, #23a6d5, #23d5ab);
+    background-size: 400% 400%;
+    animation: gradient 15s ease infinite;
+}
+/* New: The animation for the background gradient */
+@keyframes gradient {
+    0% {
+        background-position: 0% 50%;
+    }
+    50% {
+        background-position: 100% 50%;
+    }
+    100% {
+        background-position: 0% 50%;
+    }
+}
+
+.container {
+    /* Frosted glass effect */
+    background: rgba(255, 255, 255, 0.25); /* Semi-transparent white */
+    
+    /* Correct Order: Prefixed property first */
+    -webkit-backdrop-filter: blur(10px); /* For Safari browser compatibility */
+    backdrop-filter: blur(10px); /* Standard property last */
+    
+    border: 1px solid rgba(255, 255, 255, 0.18); /* A subtle border */
+    border-radius: 20px; /* A slightly larger radius looks better with glass */
+    box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.2); /* A more pronounced shadow */
+
+    padding: 2em;
+    width: 90%;
+    max-width: 500px;
+    text-align: center;
+}
+
+h1 {
+    color: #3d52a0;
+    margin-bottom: 0.5em;
+}
+
+p {
+    color: #667;
+    margin-bottom: 1.5em;
+}
+
+textarea {
+    width: 100%;
+    min-height: 120px;
+    margin-bottom: 1.5em;
+    font-size: 1em;
+    font-family: 'Roboto', sans-serif; /* Using Roboto here too */
+    padding: 12px;
+    box-sizing: border-box;
+    border: 1px solid #dce1e7;
+    border-radius: 12px;
+    resize: vertical;
+}
+
+button {
+    width: 100%;
+    padding: 12px;
+    cursor: pointer;
+    font-size: 1.1em;
+    font-weight: 600;
+    color: #fff;
+    background: linear-gradient(90deg, #7267d8, #a067d8);
+    border: none;
+    border-radius: 12px;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    display: flex; /* New: To align icon and text */
+    justify-content: center; /* New: To align icon and text */
+    align-items: center; /* New: To align icon and text */
+}
+
+/* New: Styling for the icon inside the button */
+button i {
+    margin-right: 8px;
+}
+
+button:hover:not(:disabled) {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 15px rgba(114, 103, 216, 0.4);
+}
+
+button:disabled {
+    background: #c5cbe0;
+    cursor: not-allowed;
+}
+
+.loader-container {
+    margin-top: 1.5em;
+    display: none;
+    justify-content: center;
+    align-items: center;
+}
+
+.loader {
+    border: 5px solid #f3f3f3;
+    border-top: 5px solid #7267d8;
+    border-radius: 50%;
+    width: 40px;
+    height: 40px;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+audio {
+    width: 100%;
+    margin-top: 1.5em;
+}
+
+#visualizer-canvas {
+    width: 100%;
+    height: 100px; /* You can adjust this height if you like */
+    display: none; /* Hidden by default, will be shown by JavaScript */
+    margin-top: 1.5em;
+    background-color: rgba(238, 242, 247, 0.5); /* A very light, semi-transparent background */
+    border-radius: 12px;
+}
