@@ -1,17 +1,28 @@
 # app.py
 import os
 import requests
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import HTMLResponse
+from fastapi.templating import Jinja2Templates
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from dotenv import load_dotenv
 
+
 # Load environment variables from the .env file
 load_dotenv()
-
 # Initialize the FastAPI application
 app = FastAPI()
 
-# --- Pydantic Model for Request Body ---
+# This line tells FastAPI that any URL path that starts with "/static"
+# should be served from the local folder named "static".
+# This is how the browser will find our script.js file.
+app.mount("/static", StaticFiles(directory="static"), name="static")
+# Initialize Jinja2 templates for rendering HTML
+templates = Jinja2Templates(directory="templates")
+
+
+                 # --- Pydantic Model for Request Body ---
 # This defines the expected structure of the JSON data for our endpoint.
 # It ensures that any request to /tts/generate must have a "text" field.
 class TTSRequest(BaseModel):
@@ -22,7 +33,7 @@ class TTSRequest(BaseModel):
     style: str = "newscast"  # Optional: set a default style
 
 
-# --- Murf AI API Configuration ---
+                # --- Murf AI API Configuration ---
 MURF_API_URL = "https://api.murf.ai/v1/speech/generate"
 API_KEY = os.getenv("MURF_API_KEY")
 
@@ -30,7 +41,15 @@ API_KEY = os.getenv("MURF_API_KEY")
 if not API_KEY:
     raise RuntimeError("MURF_API_KEY not found in .env file. Please add it.")
 
-# --- API Endpoint for Text-to-Speech ---
+@app.get("/",response_class=HTMLResponse)
+async def read_root(request: Request):
+    """
+    This endpoint is triggered when a user goes to the main page (the "/" path).
+    It uses the template engine to find "index.html" and sends it back.
+    """
+    return templates.TemplateResponse("index.html", {"request": request})
+
+                # --- API Endpoint for Text-to-Speech ---
 @app.post("/tts/generate")
 async def generate_tts(request_body: TTSRequest):
     """
@@ -64,7 +83,7 @@ async def generate_tts(request_body: TTSRequest):
         # 6. Check if the audioFile is in the response
         if "audioFile" in murf_response_data:
             # 7. Return the successful response
-            return {"audioURL": murf_response_data["audioFile"]}
+            return {"audioUrl": murf_response_data["audioFile"]}
         else:
             # Handle cases where the API call was successful but didn't return a file
             raise HTTPException(status_code=500, detail="Murf API did not return an audio file Url.")
@@ -80,8 +99,4 @@ async def generate_tts(request_body: TTSRequest):
         print(f"An unexpected error occurred: {e}")
         raise HTTPException(status_code=500, detail=f"An internal server error occurred: {str(e)}")
 
-# --- Optional: A root endpoint to confirm the server is running ---
-@app.get("/")
-def read_root():
-    return {"message": "Welcome to the Murf AI TTS API wrapper!"}
 

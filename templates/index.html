@@ -3,15 +3,40 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Voice Assistant</title>
+    <title>Murf AI TTS Client</title>
+    
+    <!-- Link to the Roboto font from Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap" rel="stylesheet">
+    
+    <!-- Link to the Font Awesome stylesheet for icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+
+    <!-- Link to our local stylesheet -->
+    <link rel="stylesheet" href="/static/style.css">
+
 </head>
 <body>
 
-    <h1>Hello from Flask!</h1>
-    <p>This HTML page is being served by a Python backend.</p>
+    <div class="container">
+        <h1>Text-to-Speech Generator</h1>
+        <p>Enter some text below and click the button to generate audio.</p>
 
-    <!-- This special syntax links to our JavaScript file -->
-    <script src="{{ url_for('static', filename='script.js') }}"></script>
+        <form id="tts-form">
+            <textarea id="text-input" placeholder="Type something here..." required></textarea>
+            <!-- New: Added an icon to the button -->
+            <button type="submit" id="generate-button">
+                <i class="fas fa-volume-up"></i>
+                <span>Voice</span>
+            </button>
+        </form>
 
+        <div class="loader-container" id="loader">
+            <div class="loader"></div>
+        </div>
+        <canvas id="visualizer-canvas"></canvas>
+        <audio id="audio-player" controls></audio>
+    </div>
+
+    <script src="/static/script.js"></script>
 </body>
 </html>
