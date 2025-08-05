@@ -1,75 +1,52 @@
 document.addEventListener('DOMContentLoaded', () => {
-    // --- Get all our HTML elements ---
+    
+    // --- SECTION 1: TEXT-TO-SPEECH (No changes here) ---
     const ttsForm = document.getElementById('tts-form');
     const textInput = document.getElementById('text-input');
     const generateButton = document.getElementById('generate-button');
     const loader = document.getElementById('loader');
     const audioPlayer = document.getElementById('audio-player');
     const canvas = document.getElementById('visualizer-canvas');
-    const canvasCtx = canvas.getContext('2d'); // The "pen" we'll use to draw
+    const canvasCtx = canvas.getContext('2d');
 
-    // --- Web Audio API Setup ---
-    // This setup is done only once
     let audioContext;
     let analyser;
     let source;
 
-    // This function connects the audio player to the analyser
     function setupAudioContext() {
-        // Create a new audio context if it doesn't exist
         if (!audioContext) {
             audioContext = new (window.AudioContext || window.webkitAudioContext)();
             analyser = audioContext.createAnalyser();
-            
-            // Create a source node from our <audio> element
             source = audioContext.createMediaElementSource(audioPlayer);
-            
-            // Connect the audio flow: source -> analyser -> speakers
             source.connect(analyser);
             analyser.connect(audioContext.destination);
         }
     }
 
-    // --- The Drawing Loop ---
     function draw() {
-        // Schedule the next frame of the animation
         requestAnimationFrame(draw);
-
-        // Get the audio frequency data
         const bufferLength = analyser.frequencyBinCount;
         const dataArray = new Uint8Array(bufferLength);
         analyser.getByteFrequencyData(dataArray);
-
-        // Clear the canvas for the new frame
         canvasCtx.clearRect(0, 0, canvas.width, canvas.height);
-
         const barWidth = (canvas.width / bufferLength) * 2.5;
         let barHeight;
         let x = 0;
-
-        // Loop through the data and draw a bar for each frequency
         for (let i = 0; i < bufferLength; i++) {
             barHeight = dataArray[i];
-
-            // Create a color gradient for the bars
             const gradient = canvasCtx.createLinearGradient(0, canvas.height, 0, canvas.height - barHeight);
-            gradient.addColorStop(0, '#7267d8'); // Start color (bottom)
-            gradient.addColorStop(1, '#a067d8'); // End color (top)
+            gradient.addColorStop(0, '#7267d8');
+            gradient.addColorStop(1, '#a067d8');
             canvasCtx.fillStyle = gradient;
-            
-            // Draw the bar on the canvas
             canvasCtx.fillRect(x, canvas.height - barHeight, barWidth, barHeight);
-
-            x += barWidth + 1; // Move to the next bar's position
+            x += barWidth + 1;
         }
     }
 
-    // --- Hide elements on page load ---
     audioPlayer.style.display = 'none';
     loader.style.display = 'none';
     canvas.style.display = 'none';
 
-    // --- Form Submission Logic ---
     ttsForm.addEventListener('submit', async (event) => {
         event.preventDefault();
         const text = textInput.value.trim();
@@ -77,49 +54,104 @@ document.addEventListener('DOMContentLoaded', () => {
             alert('Please enter some text.');
             return;
         }
-
-        // --- Start Loading State ---
         generateButton.disabled = true;
         audioPlayer.style.display = 'none';
         canvas.style.display = 'none';
         loader.style.display = 'flex';
-
         try {
             const response = await fetch('/tts/generate', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ text: text }),
             });
-
             if (!response.ok) {
                 const errorData = await response.json();
                 throw new Error(errorData.detail || 'An unknown error occurred.');
             }
-
             const data = await response.json();
             const audioUrl = data.audioUrl;
-
-            // --- Success State ---
             audioPlayer.src = audioUrl;
-            
-            // Set Cross-Origin attribute to allow audio analysis
             audioPlayer.crossOrigin = "anonymous";
-            
             audioPlayer.style.display = 'block';
-            canvas.style.display = 'block'; // Show the canvas
-
-            // Setup the audio context and start the visualizer
+            canvas.style.display = 'block';
             setupAudioContext();
             draw();
-            
             audioPlayer.play();
-
         } catch (error) {
             console.error('Error:', error);
             alert(`Error: ${error.message}`);
         } finally {
             generateButton.disabled = false;
             loader.style.display = 'none';
+        }
+    });
+
+    // --- SECTION 2: FINAL ECHO BOT LOGIC ---
+    const startButton = document.getElementById('start-recording-button');
+    const stopButton = document.getElementById('stop-recording-button');
+    const echoAudioPlayer = document.getElementById('echo-audio-player');
+
+    let mediaRecorder;
+    let audioChunks = [];
+    let stream; 
+
+    echoAudioPlayer.style.display = 'none';
+    stopButton.disabled = true;
+
+    startButton.addEventListener('click', async () => {
+        try {
+            stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            
+            startButton.disabled = true;
+            stopButton.disabled = false;
+            startButton.classList.add('recording');
+            echoAudioPlayer.style.display = 'none';
+            audioChunks = []; // Clear previous recording chunks
+
+            const options = { mimeType: 'audio/webm;codecs=opus' };
+            mediaRecorder = new MediaRecorder(stream, options);
+
+            mediaRecorder.addEventListener('dataavailable', event => {
+                if (event.data.size > 0) {
+                    audioChunks.push(event.data);
+                }
+            });
+
+            mediaRecorder.start();
+        } catch (error) {
+            console.error("Error accessing microphone:", error);
+            alert("Could not access microphone. Please ensure you have given permission.");
+        }
+    });
+
+    stopButton.addEventListener('click', () => {
+        if (mediaRecorder && mediaRecorder.state === "recording") {
+            // Create a promise that resolves when the 'stop' event fires
+            const stopped = new Promise((resolve, reject) => {
+                mediaRecorder.onstop = resolve;
+                mediaRecorder.onerror = event => reject(event.name);
+            });
+
+            // This function will run after the recorder has fully stopped
+            const handleStop = () => {
+                const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+                const audioUrl = URL.createObjectURL(audioBlob);
+                
+                echoAudioPlayer.src = audioUrl;
+                echoAudioPlayer.style.display = 'block';
+                echoAudioPlayer.play();
+
+                startButton.disabled = false;
+                stopButton.disabled = true;
+                startButton.classList.remove('recording');
+            };
+
+            // Wait for the 'stopped' promise to resolve, then handle it
+            stopped.then(handleStop);
+            
+            // Stop the recorder and the microphone stream
+            mediaRecorder.stop();
+            stream.getTracks().forEach(track => track.stop());
         }
     });
 });
