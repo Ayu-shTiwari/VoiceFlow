@@ -1,12 +1,15 @@
 # app.py
 import os
 import requests
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, File, UploadFile
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from dotenv import load_dotenv
+import shutil
+import uuid
+
 
 
 # Load environment variables from the .env file
@@ -99,4 +102,37 @@ async def generate_tts(request_body: TTSRequest):
         print(f"An unexpected error occurred: {e}")
         raise HTTPException(status_code=500, detail=f"An internal server error occurred: {str(e)}")
 
+# file upload endpoint section
+        # --- NEW ENDPOINT FOR UPLOADING AUDIO ---
 
+@app.post("/upload-audio/")
+async def upload_audio(audio_file: UploadFile = File(...)):
+    """
+    Endpoint to upload an audio file.
+    Saves the file to the 'uploads' directory with a unique name.
+    and returns the file details.
+    """
+    # Ensure the uploads directory exists
+    uploads_dir = "uploads"
+    os.makedirs(uploads_dir, exist_ok=True)
+
+    # Create a unique filename using uuid
+    file_extension = ".webm"
+    unique_filename = f"{uuid.uuid4()}{file_extension}"
+    
+    # Save the uploaded file
+    file_path = os.path.join(uploads_dir, unique_filename)
+    try:
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(audio_file.file, buffer)
+        return {
+            "message": "File uploaded successfully",
+            "filename": unique_filename,
+            "content_type": audio_file.content_type,
+            "size_bytes": audio_file.size
+        }   
+         
+    except Exception as e:
+        print(f"Error occurred while saving file: {e}")
+        raise HTTPException(status_code=500, detail=f"Error occurred while saving file: {str(e)}")
+    

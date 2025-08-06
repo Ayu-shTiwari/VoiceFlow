@@ -91,14 +91,22 @@ document.addEventListener('DOMContentLoaded', () => {
     const stopButton = document.getElementById('stop-recording-button');
     const echoAudioPlayer = document.getElementById('echo-audio-player');
 
+    // FIXED: Get references to the upload elements
+    const uploadSection = document.querySelector('.upload-section');
+    const uploadButton = document.getElementById('upload-button');
+    const uploadStatus = document.getElementById('upload-status');
+
     let mediaRecorder;
     let audioChunks = [];
     let stream; 
+    let recordedAudioBlob;
 
     echoAudioPlayer.style.display = 'none';
     stopButton.disabled = true;
+    uploadSection.style.display = 'none'; // Hide upload section initially
 
-    startButton.addEventListener('click', async () => {
+
+    startButton.addEventListener('click', async() => {
         try {
             stream = await navigator.mediaDevices.getUserMedia({ audio: true });
             
@@ -106,6 +114,7 @@ document.addEventListener('DOMContentLoaded', () => {
             stopButton.disabled = false;
             startButton.classList.add('recording');
             echoAudioPlayer.style.display = 'none';
+            uploadSection.style.display = 'none'; // Show upload section when recording starts
             audioChunks = []; // Clear previous recording chunks
 
             const options = { mimeType: 'audio/webm;codecs=opus' };
@@ -134,12 +143,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // This function will run after the recorder has fully stopped
             const handleStop = () => {
-                const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
-                const audioUrl = URL.createObjectURL(audioBlob);
-                
+                recordedAudioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+                const audioUrl = URL.createObjectURL(recordedAudioBlob);
+
                 echoAudioPlayer.src = audioUrl;
                 echoAudioPlayer.style.display = 'block';
-                echoAudioPlayer.play();
+                uploadSection.style.display = 'block'; // Show upload section after recording stops
+                uploadStatus.textContent = ''; // Clear previous upload status
 
                 startButton.disabled = false;
                 stopButton.disabled = true;
@@ -152,6 +162,41 @@ document.addEventListener('DOMContentLoaded', () => {
             // Stop the recorder and the microphone stream
             mediaRecorder.stop();
             stream.getTracks().forEach(track => track.stop());
+        }
+    });
+
+    // --- SECTION 3: UPLOAD BUTTON LOGIC  ---
+    uploadButton.addEventListener('click', async () => {
+        if (!recordedAudioBlob) {
+            alert('Please record audio before uploading.');
+            return;
+        }
+        // create form data object to send the audio file
+        const formData = new FormData();   
+        formData.append('audio_file', recordedAudioBlob, 'recording.webm');
+        uploadStatus.textContent = 'Uploading...';
+        uploadButton.disabled = true;
+        try {
+            const response = await fetch('/upload-audio/',{
+                method: 'POST',
+                body: formData, // send the form data
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.detail || 'upload failed.');
+            }
+
+            const result = await response.json();
+            console.log('Upload successful:', result);
+            uploadStatus.textContent = 'Upload successful!';
+            alert('Upload successful!');
+        } catch (error) {
+            console.error('Upload error:', error);
+            uploadStatus.textContent = `Upload failed: ${error.message}`;
+
+        } finally {
+            uploadButton.disabled = false;
         }
     });
 });

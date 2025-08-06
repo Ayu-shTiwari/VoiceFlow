@@ -30,4 +30,8 @@ Thumbs.db
 dist/
 build/
 
+#just random screenshots
 ss/
+
+#uploaded audio files
+uploads/
