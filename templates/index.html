@@ -34,7 +34,7 @@
         
         <!-- ECHO BOT SECTION (Now inside the container) -->
         <h1>Echo Bot</h1>
-        <p>Click "Start Recording" to record your voice, then "Stop" to play it back.</p>
+        <p>Record your voice, then click "Transcribe" to convert it to text.</p>
         <div class="button-group">
             <button id="start-recording-button">
                 <i class="fas fa-microphone"></i>
@@ -47,13 +47,13 @@
         </div>   
         <audio id="echo-audio-player" controls></audio>
         
-        <!-- --- NEW UPLOAD SECTION --- -->
-        <div class="upload-section">
-            <button id="upload-button">
-                <i class="fas fa-upload"></i>
-                <span>Upload Recording</span>
+        <!-- --- NEW TRANSCRIBE SECTION --- -->
+        <div class="transcribe-section">
+            <button id="transcribe-button">
+                <i class="fas fa-file-alt"></i>
+                <span>Transcribe Recording</span>
             </button>
-            <p id="upload-status"></p> <!-- For status messages -->
+            <p id="transcribe-status"></p> <!-- For status messages -->
         </div>
     </div>
 

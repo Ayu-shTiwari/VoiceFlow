@@ -163,27 +163,27 @@ audio {
         box-shadow: 0 0 0 0 rgba(231, 76, 60, 0);
     }
 }
-.upload-section {
+.transcribe-section {
     margin-top: 1.5em;
     text-align: center;
     display: none; /* Hidden by default, will be shown by JavaScript */
 }
 
-#upload-button {
+#transcribe-button {
     background: linear-gradient(90deg, #5cb85c, #4cae4c);
     width: auto; /* Adjust width to fit content */
     padding: 10px 20px; /* Adjust padding for better appearance */
 }
 
-#upload-button:hover:not(:disabled) {
+#transcribe-button:hover:not(:disabled) {
     transform: translateY(-2px);
     box-shadow: 0 4px 15px rgba(92, 184, 92, 0.4);
 }
-#upload-button:disabled {
+#transcribe-button:disabled {
     background: #c5cbe0; /* Use the same grey as other disabled buttons */
     cursor: not-allowed;
 }
-#upload-status {
+#transcribe-status {
     margin-top: 0.5em;
     color: #fff; /* White color for success messages */
     font-size: 0.9em;

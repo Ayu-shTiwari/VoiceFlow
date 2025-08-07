@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from dotenv import load_dotenv
 import shutil
 import uuid
+import assemblyai as aai
 
 
 
@@ -102,37 +103,34 @@ async def generate_tts(request_body: TTSRequest):
         print(f"An unexpected error occurred: {e}")
         raise HTTPException(status_code=500, detail=f"An internal server error occurred: {str(e)}")
 
-# file upload endpoint section
-        # --- NEW ENDPOINT FOR UPLOADING AUDIO ---
+#                        --- NEW ENDPOINT FOR TRANSCRIBING AUDIO ---
 
-@app.post("/upload-audio/")
-async def upload_audio(audio_file: UploadFile = File(...)):
-    """
-    Endpoint to upload an audio file.
-    Saves the file to the 'uploads' directory with a unique name.
-    and returns the file details.
-    """
-    # Ensure the uploads directory exists
-    uploads_dir = "uploads"
-    os.makedirs(uploads_dir, exist_ok=True)
+ASSEMBLYAI_API_KEY= os.getenv("ASSEMBLYAI_API_KEY")
+if not ASSEMBLYAI_API_KEY:
+    raise RuntimeError("ASSEMBLYAI_API_KEY not found in .env file.")
+else: aai.settings.api_key = ASSEMBLYAI_API_KEY
 
-    # Create a unique filename using uuid
-    file_extension = ".webm"
-    unique_filename = f"{uuid.uuid4()}{file_extension}"
+@app.get("/",response_class=HTMLResponse)
+async def read_root(request: Request):
+    """serves the main index.html page"""
+    return templates.TemplateResponse("index.html", {"request": request})
     
-    # Save the uploaded file
-    file_path = os.path.join(uploads_dir, unique_filename)
+@app.post("/transcribe/file")
+async def transcribe_audio(audio_file: UploadFile = File(...)):
+    """
+    Accepts an audio file, uploads it to AssemblyAI for transcription,
+    and returns the transcription text.
+    """
     try:
-        with open(file_path, "wb") as buffer:
-            shutil.copyfileobj(audio_file.file, buffer)
-        return {
-            "message": "File uploaded successfully",
-            "filename": unique_filename,
-            "content_type": audio_file.content_type,
-            "size_bytes": audio_file.size
-        }   
-         
+        audio_data=await audio_file.read()
+        config = aai.TranscriptionConfig(speech_model=aai.SpeechModel.best)
+        transcript=aai.Transcriber(config=config).transcribe(audio_data)
+
+        if transcript.status == aai.TranscriptStatus.error:
+            raise HTTPException(status_code=500, detail=f"Transcription failed: {transcript.error}")    
+        # If transcription is successful, return the text
+        return {"transcript": transcript.text}
     except Exception as e:
-        print(f"Error occurred while saving file: {e}")
-        raise HTTPException(status_code=500, detail=f"Error occurred while saving file: {str(e)}")
-    
+        # Handle any errors that occur during transcription
+        print(f"Internal Server Error occured: {e}")
+        raise HTTPException(status_code=500, detail=f"An internal server error: {str(e)}")

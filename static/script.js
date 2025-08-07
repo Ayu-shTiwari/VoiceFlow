@@ -86,15 +86,15 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // --- SECTION 2: FINAL ECHO BOT LOGIC ---
+    
     const startButton = document.getElementById('start-recording-button');
     const stopButton = document.getElementById('stop-recording-button');
     const echoAudioPlayer = document.getElementById('echo-audio-player');
 
-    // FIXED: Get references to the upload elements
-    const uploadSection = document.querySelector('.upload-section');
-    const uploadButton = document.getElementById('upload-button');
-    const uploadStatus = document.getElementById('upload-status');
+    // FIXED: Get references to the transcribe elements
+    const transcribeSection = document.querySelector('.transcribe-section');
+    const transcribeButton = document.getElementById('transcribe-button');
+    const transcribeStatus = document.getElementById('transcribe-status');
 
     let mediaRecorder;
     let audioChunks = [];
@@ -103,7 +103,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     echoAudioPlayer.style.display = 'none';
     stopButton.disabled = true;
-    uploadSection.style.display = 'none'; // Hide upload section initially
+    transcribeSection.style.display = 'none'; // Hide transcribe section initially
 
 
     startButton.addEventListener('click', async() => {
@@ -114,7 +114,7 @@ document.addEventListener('DOMContentLoaded', () => {
             stopButton.disabled = false;
             startButton.classList.add('recording');
             echoAudioPlayer.style.display = 'none';
-            uploadSection.style.display = 'none'; // Show upload section when recording starts
+            transcribeSection.style.display = 'none'; // Show transcribe section when recording starts
             audioChunks = []; // Clear previous recording chunks
 
             const options = { mimeType: 'audio/webm;codecs=opus' };
@@ -148,8 +148,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 echoAudioPlayer.src = audioUrl;
                 echoAudioPlayer.style.display = 'block';
-                uploadSection.style.display = 'block'; // Show upload section after recording stops
-                uploadStatus.textContent = ''; // Clear previous upload status
+                transcribeSection.style.display = 'block'; // Show transcribe section after recording stops
+                transcribeStatus.textContent = ''; // Clear previous transcribe status
 
                 startButton.disabled = false;
                 stopButton.disabled = true;
@@ -165,38 +165,39 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // --- SECTION 3: UPLOAD BUTTON LOGIC  ---
-    uploadButton.addEventListener('click', async () => {
+    // --- SECTION 3: transcribe BUTTON LOGIC  ---
+    transcribeButton.addEventListener('click', async () => {
         if (!recordedAudioBlob) {
-            alert('Please record audio before uploading.');
+            alert('No recording available to transcribe.');
             return;
         }
         // create form data object to send the audio file
         const formData = new FormData();   
         formData.append('audio_file', recordedAudioBlob, 'recording.webm');
-        uploadStatus.textContent = 'Uploading...';
-        uploadButton.disabled = true;
+        transcribeStatus.textContent = 'transcribing... please wait.';
+        transcribeButton.disabled = true;
         try {
-            const response = await fetch('/upload-audio/',{
+            const response = await fetch('/transcribe/file',{
                 method: 'POST',
                 body: formData, // send the form data
             });
 
             if (!response.ok) {
                 const errorData = await response.json();
-                throw new Error(errorData.detail || 'upload failed.');
+                throw new Error(errorData.detail || 'Transcription failed.');
             }
 
             const result = await response.json();
-            console.log('Upload successful:', result);
-            uploadStatus.textContent = 'Upload successful!';
-            alert('Upload successful!');
+            textInput.value=result.transcript;
+            // We can also clear the status text now
+            transcribeStatus.textContent = 'Done transcribing.';
+            alert("Transcription successful!");
         } catch (error) {
-            console.error('Upload error:', error);
-            uploadStatus.textContent = `Upload failed: ${error.message}`;
+            console.error('transcription error:', error);
+            transcribeStatus.textContent = `transcription failed: ${error.message}`;
 
         } finally {
-            uploadButton.disabled = false;
+            transcribeButton.disabled = false;
         }
     });
 });
