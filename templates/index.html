@@ -33,8 +33,8 @@
         <hr>
         
         <!-- ECHO BOT SECTION (Now inside the container) -->
-        <h1>Echo Bot</h1>
-        <p>Record your voice, then click "Transcribe" to convert it to text.</p>
+        <h1>Echo Bot V2</h1>
+        <p>Record your voice and have it echoed back to you.</p>
         <div class="button-group">
             <button id="start-recording-button">
                 <i class="fas fa-microphone"></i>
@@ -44,16 +44,19 @@
                 <i class="fas fa-stop-circle"></i>
                 <span>Stop Recording</span>
             </button>
+            <button id="reset-button">
+                <i class="fas fa-sync-alt"></i>
+                <span>Clear</span>
+            </button>
         </div>   
         <audio id="echo-audio-player" controls></audio>
-        
-        <!-- --- NEW TRANSCRIBE SECTION --- -->
-        <div class="transcribe-section">
-            <button id="transcribe-button">
+
+        <div class="echo-section">
+            <button id="echo-button">
                 <i class="fas fa-file-alt"></i>
-                <span>Transcribe Recording</span>
+                <span>Echo voice</span>
             </button>
-            <p id="transcribe-status"></p> <!-- For status messages -->
+            <p id="echo-status"></p> <!-- For status messages -->
         </div>
     </div>
 

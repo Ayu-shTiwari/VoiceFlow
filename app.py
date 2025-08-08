@@ -7,8 +7,6 @@ from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from dotenv import load_dotenv
-import shutil
-import uuid
 import assemblyai as aai
 
 
@@ -26,7 +24,24 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
 
-                 # --- Pydantic Model for Request Body ---
+
+                # --- 2. API KEY CONFIGURATION ---
+
+# --- Murf AI API Configuration ---
+MURF_API_URL = "https://api.murf.ai/v1/speech/generate"
+MURF_API_KEY = os.getenv("MURF_API_KEY")
+if not MURF_API_KEY:
+    raise RuntimeError("MURF_API_KEY not found in .env file. Please add it.")
+
+# --- AssemblyAI API Configuration ---
+ASSEMBLYAI_API_KEY = os.getenv("ASSEMBLYAI_API_KEY")
+if not ASSEMBLYAI_API_KEY:
+    raise RuntimeError("ASSEMBLYAI_API_KEY not found in .env file.")
+else:
+    aai.settings.api_key = ASSEMBLYAI_API_KEY
+
+        # --- 3. Pydantic Model for Request Body ---
+        
 # This defines the expected structure of the JSON data for our endpoint.
 # It ensures that any request to /tts/generate must have a "text" field.
 class TTSRequest(BaseModel):
@@ -35,16 +50,7 @@ class TTSRequest(BaseModel):
     format: str = "mp3"       # Optional: set a default format
     quality: str = "high"    # Optional: set a default quality
     style: str = "newscast"  # Optional: set a default style
-
-
-                # --- Murf AI API Configuration ---
-MURF_API_URL = "https://api.murf.ai/v1/speech/generate"
-API_KEY = os.getenv("MURF_API_KEY")
-
-# Check if the API key is loaded
-if not API_KEY:
-    raise RuntimeError("MURF_API_KEY not found in .env file. Please add it.")
-
+    
 @app.get("/",response_class=HTMLResponse)
 async def read_root(request: Request):
     """
@@ -53,7 +59,9 @@ async def read_root(request: Request):
     """
     return templates.TemplateResponse("index.html", {"request": request})
 
-                # --- API Endpoint for Text-to-Speech ---
+
+                    # ---4 API Endpoint for Text-to-Speech ---
+
 @app.post("/tts/generate")
 async def generate_tts(request_body: TTSRequest):
     """
@@ -63,7 +71,7 @@ async def generate_tts(request_body: TTSRequest):
     # 1. Set up the headers for the Murf API request
     headers = {
         "Content-Type": "application/json",
-        "api-key": API_KEY
+        "api-key": MURF_API_KEY
     }
 
     # 2. Create the payload with the data from our endpoint's request
@@ -103,17 +111,7 @@ async def generate_tts(request_body: TTSRequest):
         print(f"An unexpected error occurred: {e}")
         raise HTTPException(status_code=500, detail=f"An internal server error occurred: {str(e)}")
 
-#                        --- NEW ENDPOINT FOR TRANSCRIBING AUDIO ---
-
-ASSEMBLYAI_API_KEY= os.getenv("ASSEMBLYAI_API_KEY")
-if not ASSEMBLYAI_API_KEY:
-    raise RuntimeError("ASSEMBLYAI_API_KEY not found in .env file.")
-else: aai.settings.api_key = ASSEMBLYAI_API_KEY
-
-@app.get("/",response_class=HTMLResponse)
-async def read_root(request: Request):
-    """serves the main index.html page"""
-    return templates.TemplateResponse("index.html", {"request": request})
+#  --- NEW ENDPOINT FOR TRANSCRIBING AUDIO ---
     
 @app.post("/transcribe/file")
 async def transcribe_audio(audio_file: UploadFile = File(...)):
@@ -134,3 +132,48 @@ async def transcribe_audio(audio_file: UploadFile = File(...)):
         # Handle any errors that occur during transcription
         print(f"Internal Server Error occured: {e}")
         raise HTTPException(status_code=500, detail=f"An internal server error: {str(e)}")
+
+# --- NEW ECHO BOT ENDPOINT ---
+@app.post("/tts/echo")
+async def tts_echo(audio_file: UploadFile = File(...)):
+    """
+        Receives audio, transcribes it, generates new speech, and returns the new audio URL.
+    """
+    try:
+        # --- Step 1: Transcribe the incoming audio ---
+        audio_data = await audio_file.read()
+        transcriber = aai.Transcriber()
+        transcript = transcriber.transcribe(audio_data)
+        
+        if transcript.status == aai.TranscriptStatus.error:
+            raise HTTPException(status_code=500, detail=f"Transcription failed: {transcript.error}")
+        transcribed_text = transcript.text
+        if not transcribed_text:
+            raise HTTPException(status_code=400, detail="No speech detected for transcription.")
+
+        # step 2: Generate new speech from the transcribed text using murf ai ---
+        headers = {
+            "Content-Type": "application/json",
+            "api-key": MURF_API_KEY
+        }
+        payload = {
+            "text": transcribed_text,
+            "voice_id": "en-US-miles",  # Default voice
+            "format": "mp3",             # Default format
+            "quality": "high",           # Default quality
+            "style": "newscast"          # Default style
+        }
+        response = requests.post(MURF_API_URL, headers=headers, json=payload)
+        response.raise_for_status()  # Raise an error for bad responses
+        
+        murf_response_data = response.json()
+        if "audioFile" in murf_response_data:
+            # 7. Return the successful response
+            return {"audioUrl": murf_response_data["audioFile"]}
+        else:
+            # Handle cases where the API call was successful but didn't return a file
+            raise HTTPException(status_code=500, detail="Murf API did not return an audio file Url.")
+
+    except Exception as e:
+        print(f"Internal Server Error occurred: {e}")
+        raise HTTPException(status_code=500, detail=f"An internal server error occurred: {str(e)}")

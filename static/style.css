@@ -9,8 +9,8 @@ body {
     min-height: 100vh;
     margin: 0;
     background-color: #eef2f7;
-    color: #333;
-    background: linear-gradient(-45deg, #ee7752, #e73c7e, #23a6d5, #23d5ab);
+    color: #7a45c5;
+    background: linear-gradient(-45deg, #ab583f, #90254e, #1a799c, #048567);
     background-size: 400% 400%;
     animation: gradient 15s ease infinite;
 }
@@ -51,7 +51,7 @@ h1 {
 }
 
 p {
-    color: #667;
+    color: rgb(79, 46, 89);
     margin-bottom: 1.5em;
 }
 
@@ -59,11 +59,12 @@ textarea {
     width: 100%;
     min-height: 120px;
     margin-bottom: 1.5em;
+    color: #4c5b9b;
     font-size: 1em;
     font-family: 'Roboto', sans-serif; /* Using Roboto here too */
     padding: 12px;
     box-sizing: border-box;
-    border: 1px solid #dce1e7;
+    border: 1px solid #585258;
     border-radius: 12px;
     resize: vertical;
 }
@@ -81,7 +82,7 @@ button {
     font-size: 1.1em;
     font-weight: 600;
     color: #fff;
-    background: linear-gradient(90deg, #7267d8, #a067d8);
+    background: linear-gradient(90deg, #403a7a, #8323e3);
     border: none;
     border-radius: 12px;
     transition: transform 0.2s ease, box-shadow 0.2s ease;
@@ -97,11 +98,11 @@ button i {
 
 button:hover:not(:disabled) {
     transform: translateY(-2px);
-    box-shadow: 0 4px 15px rgba(114, 103, 216, 0.4);
+    box-shadow: 0 4px 15px rgba(7, 2, 58, 0.4);
 }
 
 button:disabled {
-    background: #c5cbe0;
+    background: #91a5f0;
     cursor: not-allowed;
 }
 
@@ -145,10 +146,10 @@ audio {
     margin-bottom: 1.5em;
 }
 #stop-recording-button {
-    background: linear-gradient(90deg, #d9534f, #c9302c);
+    background: linear-gradient(90deg, #da403b, #a51f1b);
 }
 .recording {
-    background: linear-gradient(90deg,#e74c3c,#c0392b) !important;
+    background: linear-gradient(90deg,#da403b,#a51f1b) !important;
     animation: pulse 1.5s infinite; /* New: Pulse animation for recording state */
 }
 /* The pulsing animation for the recording button */
@@ -163,27 +164,27 @@ audio {
         box-shadow: 0 0 0 0 rgba(231, 76, 60, 0);
     }
 }
-.transcribe-section {
+.echo-section {
     margin-top: 1.5em;
     text-align: center;
     display: none; /* Hidden by default, will be shown by JavaScript */
 }
 
-#transcribe-button {
-    background: linear-gradient(90deg, #5cb85c, #4cae4c);
+#echo-button {
+    background: linear-gradient(90deg, #5c87b8, #2d0497);
     width: auto; /* Adjust width to fit content */
     padding: 10px 20px; /* Adjust padding for better appearance */
 }
 
-#transcribe-button:hover:not(:disabled) {
+#echo-button:hover:not(:disabled) {
     transform: translateY(-2px);
-    box-shadow: 0 4px 15px rgba(92, 184, 92, 0.4);
+    box-shadow: 0 4px 15px rgba(28, 6, 66, 0.4);
 }
-#transcribe-button:disabled {
+#echo-button:disabled {
     background: #c5cbe0; /* Use the same grey as other disabled buttons */
     cursor: not-allowed;
 }
-#transcribe-status {
+#echo-status {
     margin-top: 0.5em;
     color: #fff; /* White color for success messages */
     font-size: 0.9em;

@@ -1,6 +1,6 @@
 document.addEventListener('DOMContentLoaded', () => {
     
-    // --- SECTION 1: TEXT-TO-SPEECH (No changes here) ---
+    // --- SECTION 1: TEXT-TO-SPEECH ---
     const ttsForm = document.getElementById('tts-form');
     const textInput = document.getElementById('text-input');
     const generateButton = document.getElementById('generate-button');
@@ -11,19 +11,19 @@ document.addEventListener('DOMContentLoaded', () => {
 
     let audioContext;
     let analyser;
-    let source;
 
-    function setupAudioContext() {
+    function setupAudioContext(audioElement) {
         if (!audioContext) {
             audioContext = new (window.AudioContext || window.webkitAudioContext)();
-            analyser = audioContext.createAnalyser();
-            source = audioContext.createMediaElementSource(audioPlayer);
-            source.connect(analyser);
-            analyser.connect(audioContext.destination);
         }
+        const source = audioContext.createMediaElementSource(audioElement);
+        analyser = audioContext.createAnalyser();
+        source.connect(analyser);
+        analyser.connect(audioContext.destination);
     }
 
     function draw() {
+        if (!analyser) return;
         requestAnimationFrame(draw);
         const bufferLength = analyser.frequencyBinCount;
         const dataArray = new Uint8Array(bufferLength);
@@ -55,8 +55,6 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         generateButton.disabled = true;
-        audioPlayer.style.display = 'none';
-        canvas.style.display = 'none';
         loader.style.display = 'flex';
         try {
             const response = await fetch('/tts/generate', {
@@ -64,37 +62,31 @@ document.addEventListener('DOMContentLoaded', () => {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ text: text }),
             });
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.detail || 'An unknown error occurred.');
-            }
+            if (!response.ok) throw new Error((await response.json()).detail);
             const data = await response.json();
-            const audioUrl = data.audioUrl;
-            audioPlayer.src = audioUrl;
+            audioPlayer.src = data.audioUrl;
             audioPlayer.crossOrigin = "anonymous";
             audioPlayer.style.display = 'block';
             canvas.style.display = 'block';
-            setupAudioContext();
+            setupAudioContext(audioPlayer);
             draw();
             audioPlayer.play();
         } catch (error) {
-            console.error('Error:', error);
-            alert(`Error: ${error.message}`);
+            alert(error.message);
         } finally {
             generateButton.disabled = false;
             loader.style.display = 'none';
         }
     });
 
-    
+    // --- SECTION 2: ECHO BOT LOGIC ---
     const startButton = document.getElementById('start-recording-button');
     const stopButton = document.getElementById('stop-recording-button');
     const echoAudioPlayer = document.getElementById('echo-audio-player');
-
-    // FIXED: Get references to the transcribe elements
-    const transcribeSection = document.querySelector('.transcribe-section');
-    const transcribeButton = document.getElementById('transcribe-button');
-    const transcribeStatus = document.getElementById('transcribe-status');
+    const echoSection = document.querySelector('.echo-section') || document.querySelector('.echo-audio-section');
+    const echoButton = document.getElementById('echo-button');
+    const echoStatus = document.getElementById('echo-status');
+    const resetButton = document.getElementById('reset-button');
 
     let mediaRecorder;
     let audioChunks = [];
@@ -103,101 +95,103 @@ document.addEventListener('DOMContentLoaded', () => {
 
     echoAudioPlayer.style.display = 'none';
     stopButton.disabled = true;
-    transcribeSection.style.display = 'none'; // Hide transcribe section initially
+    if(echoSection) echoSection.style.display = 'none';
 
-
-    startButton.addEventListener('click', async() => {
+    startButton.addEventListener('click', async () => {
         try {
             stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            
             startButton.disabled = true;
             stopButton.disabled = false;
             startButton.classList.add('recording');
+            if(echoSection) echoSection.style.display = 'none';
             echoAudioPlayer.style.display = 'none';
-            transcribeSection.style.display = 'none'; // Show transcribe section when recording starts
-            audioChunks = []; // Clear previous recording chunks
-
-            const options = { mimeType: 'audio/webm;codecs=opus' };
-            mediaRecorder = new MediaRecorder(stream, options);
-
+            audioChunks = [];
+            
+            mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm;codecs=opus' });
+            
             mediaRecorder.addEventListener('dataavailable', event => {
-                if (event.data.size > 0) {
-                    audioChunks.push(event.data);
-                }
+                if (event.data.size > 0) audioChunks.push(event.data);
             });
 
-            mediaRecorder.start();
+            mediaRecorder.onstop = () => {
+                recordedAudioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+                if(echoSection) echoSection.style.display = 'block';
+                if(echoStatus) echoStatus.textContent = 'Recording ready. Click "Echo Voice".';
+                
+                startButton.disabled = false;
+                stopButton.disabled = true;
+                startButton.classList.remove('recording');
+                stream.getTracks().forEach(track => track.stop());
+            };
+
+            // --- FIXED: Start recording with a timeslice ---
+            // This forces the 'dataavailable' event to fire every 250ms,
+            // ensuring we capture audio chunks reliably.
+            mediaRecorder.start(250);
+
         } catch (error) {
-            console.error("Error accessing microphone:", error);
-            alert("Could not access microphone. Please ensure you have given permission.");
+            alert("Could not access microphone. Please ensure you have given permission in your browser settings.");
         }
     });
 
     stopButton.addEventListener('click', () => {
         if (mediaRecorder && mediaRecorder.state === "recording") {
-            // Create a promise that resolves when the 'stop' event fires
-            const stopped = new Promise((resolve, reject) => {
-                mediaRecorder.onstop = resolve;
-                mediaRecorder.onerror = event => reject(event.name);
-            });
-
-            // This function will run after the recorder has fully stopped
-            const handleStop = () => {
-                recordedAudioBlob = new Blob(audioChunks, { type: 'audio/webm' });
-                const audioUrl = URL.createObjectURL(recordedAudioBlob);
-
-                echoAudioPlayer.src = audioUrl;
-                echoAudioPlayer.style.display = 'block';
-                transcribeSection.style.display = 'block'; // Show transcribe section after recording stops
-                transcribeStatus.textContent = ''; // Clear previous transcribe status
-
-                startButton.disabled = false;
-                stopButton.disabled = true;
-                startButton.classList.remove('recording');
-            };
-
-            // Wait for the 'stopped' promise to resolve, then handle it
-            stopped.then(handleStop);
-            
-            // Stop the recorder and the microphone stream
             mediaRecorder.stop();
-            stream.getTracks().forEach(track => track.stop());
         }
     });
 
-    // --- SECTION 3: transcribe BUTTON LOGIC  ---
-    transcribeButton.addEventListener('click', async () => {
-        if (!recordedAudioBlob) {
-            alert('No recording available to transcribe.');
+    resetButton.addEventListener('click', () => {
+        // Stop recording if it's in progress
+        if (mediaRecorder && mediaRecorder.state === "recording") {
+            mediaRecorder.stop();
+        }
+        // Hide the echo section and player
+        if(echoSection) echoSection.style.display = 'none';
+        echoAudioPlayer.style.display = 'none';
+        echoAudioPlayer.src = ''; // Clear the audio source
+        
+        // Reset button states
+        startButton.disabled = false;
+        stopButton.disabled = true;
+        startButton.classList.remove('recording');
+        
+        // Clear data
+        recordedAudioBlob = null;
+        audioChunks = [];
+    });
+
+    echoButton.addEventListener('click', async () => {
+        if (!recordedAudioBlob || recordedAudioBlob.size === 0) {
+            alert("No recording available or recording is empty.");
             return;
         }
-        // create form data object to send the audio file
-        const formData = new FormData();   
+        const formData = new FormData();
         formData.append('audio_file', recordedAudioBlob, 'recording.webm');
-        transcribeStatus.textContent = 'transcribing... please wait.';
-        transcribeButton.disabled = true;
+        
+        if(echoStatus) echoStatus.textContent = "Echoing... please wait.";
+        echoButton.disabled = true;
+
         try {
-            const response = await fetch('/transcribe/file',{
+            const response = await fetch('/tts/echo', {
                 method: 'POST',
-                body: formData, // send the form data
+                body: formData,
             });
-
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.detail || 'Transcription failed.');
-            }
-
+            if (!response.ok) throw new Error((await response.json()).detail);
+            
             const result = await response.json();
-            textInput.value=result.transcript;
-            // We can also clear the status text now
-            transcribeStatus.textContent = 'Done transcribing.';
-            alert("Transcription successful!");
-        } catch (error) {
-            console.error('transcription error:', error);
-            transcribeStatus.textContent = `transcription failed: ${error.message}`;
+            echoAudioPlayer.src = result.audioUrl;
+            echoAudioPlayer.crossOrigin = "anonymous";
+            echoAudioPlayer.style.display = 'block';
+            echoAudioPlayer.play();
+            
+            if(echoStatus) echoStatus.textContent = "Echo successful!";
+            setTimeout(() => { if(echoStatus) echoStatus.textContent = ''; }, 4000);
 
+        } catch (error) {
+            console.error("Echo error:", error);
+            if(echoStatus) echoStatus.textContent = `Error: ${error.message}`;
         } finally {
-            transcribeButton.disabled = false;
+            echoButton.disabled = false;
         }
     });
 });
