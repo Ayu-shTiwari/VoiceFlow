@@ -8,6 +8,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from dotenv import load_dotenv
 import assemblyai as aai
+import google.generativeai as genai
 
 
 
@@ -40,6 +41,12 @@ if not ASSEMBLYAI_API_KEY:
 else:
     aai.settings.api_key = ASSEMBLYAI_API_KEY
 
+# --- Google Gemini Api Configuration ---
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+if not GEMINI_API_KEY:
+    raise RuntimeError("GEMINI_API_KEY not found in .env file.")
+genai.configure(api_key=GEMINI_API_KEY)
+
         # --- 3. Pydantic Model for Request Body ---
         
 # This defines the expected structure of the JSON data for our endpoint.
@@ -50,7 +57,11 @@ class TTSRequest(BaseModel):
     format: str = "mp3"       # Optional: set a default format
     quality: str = "high"    # Optional: set a default quality
     style: str = "newscast"  # Optional: set a default style
-    
+
+class LLMQueryRequest(BaseModel):
+    text: str
+
+
 @app.get("/",response_class=HTMLResponse)
 async def read_root(request: Request):
     """
@@ -177,3 +188,22 @@ async def tts_echo(audio_file: UploadFile = File(...)):
     except Exception as e:
         print(f"Internal Server Error occurred: {e}")
         raise HTTPException(status_code=500, detail=f"An internal server error occurred: {str(e)}")
+    
+
+# --- NEW ENDPOINT FOR LLM QUERY ---
+@app.post("/llm/query")
+async def llm_query(request_body: LLMQueryRequest):
+    """
+    Accepts a text prompt and returns a response from the llm
+    """
+    try:
+        model=genai.GenerativeModel("gemini-1.5-flash-latest")
+        
+        #generate response based on the input text
+        response = model.generate_content(request_body.text)
+        
+        return {"response": response.text}
+    
+    except Exception as e:
+        print(f"Internal Server Error occurred: {e}")
+        raise HTTPException(status_code=500, detail=f"An internal error occurred with LLM: {str(e)}")
