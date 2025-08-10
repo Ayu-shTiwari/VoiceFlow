@@ -106,6 +106,21 @@ button:disabled {
     cursor: not-allowed;
 }
 
+#stop-recording-button {
+    background: linear-gradient(90deg, #da403b, #a51f1b);
+}
+
+#start-recording-button.recording {
+    background: linear-gradient(90deg, #da403b, #a51f1b) !important;
+    animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+    0% { box-shadow: 0 0 0 0 rgba(231, 76, 60, 0.7); }
+    70% { box-shadow: 0 0 0 10px rgba(231, 76, 60, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(231, 76, 60, 0); }
+}
+
 .loader-container {
     margin-top: 1.5em;
     display: none;
@@ -140,54 +155,30 @@ audio {
     background-color: rgba(238, 242, 247, 0.5); /* A very light, semi-transparent background */
     border-radius: 12px;
 }
-.button-group {
-    display: flex;
-    gap: 1em;
-    margin-bottom: 1.5em;
-}
-#stop-recording-button {
-    background: linear-gradient(90deg, #da403b, #a51f1b);
-}
-.recording {
-    background: linear-gradient(90deg,#da403b,#a51f1b) !important;
-    animation: pulse 1.5s infinite; /* New: Pulse animation for recording state */
-}
-/* The pulsing animation for the recording button */
-@keyframes pulse {
-    0% {
-        box-shadow: 0 0 0 0 rgba(231, 76, 60, 0.7);
-    }
-    70% {
-        box-shadow: 0 0 0 10px rgba(231, 76, 60, 0);
-    }
-    100% {
-        box-shadow: 0 0 0 0 rgba(231, 76, 60, 0);
-    }
-}
-.echo-section {
-    margin-top: 1.5em;
-    text-align: center;
-    display: none; /* Hidden by default, will be shown by JavaScript */
-}
 
-#echo-button {
-    background: linear-gradient(90deg, #5c87b8, #2d0497);
-    width: auto; /* Adjust width to fit content */
-    padding: 10px 20px; /* Adjust padding for better appearance */
-}
-
-#echo-button:hover:not(:disabled) {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 15px rgba(28, 6, 66, 0.4);
-}
-#echo-button:disabled {
-    background: #c5cbe0; /* Use the same grey as other disabled buttons */
-    cursor: not-allowed;
-}
-#echo-status {
+#response-status {
     margin-top: 0.5em;
     color: #fff; /* White color for success messages */
     font-size: 0.9em;
     min-height: 1.2em; /* Ensures space for the message */
 }
 
+#transcript-display {
+    font-style: italic;
+    color: #e0e0e0;
+    margin-bottom: 1em;
+    min-height: 1.2em;
+}
+
+#llm-response-container {
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 10px;
+    padding: 15px;
+    margin-top: 1.5em;
+    text-align: left;
+    color: #f0f0f0;
+    font-size: 0.95em;
+    line-height: 1.6;
+    max-height: 200px; /* Limit height and allow scrolling */
+    overflow-y: auto;   /* Add scrollbar if content overflows */
+}

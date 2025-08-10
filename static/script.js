@@ -4,7 +4,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const ttsForm = document.getElementById('tts-form');
     const textInput = document.getElementById('text-input');
     const generateButton = document.getElementById('generate-button');
-    const loader = document.getElementById('loader');
+    const ttsLoader = document.getElementById('loader');
     const audioPlayer = document.getElementById('audio-player');
     const canvas = document.getElementById('visualizer-canvas');
     const canvasCtx = canvas.getContext('2d');
@@ -44,18 +44,15 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     audioPlayer.style.display = 'none';
-    loader.style.display = 'none';
+    ttsLoader.style.display = 'none';
     canvas.style.display = 'none';
 
     ttsForm.addEventListener('submit', async (event) => {
         event.preventDefault();
         const text = textInput.value.trim();
-        if (!text) {
-            alert('Please enter some text.');
-            return;
-        }
+        if (!text) return;
         generateButton.disabled = true;
-        loader.style.display = 'flex';
+        ttsLoader.style.display = 'flex';
         try {
             const response = await fetch('/tts/generate', {
                 method: 'POST',
@@ -64,7 +61,7 @@ document.addEventListener('DOMContentLoaded', () => {
             });
             if (!response.ok) throw new Error((await response.json()).detail);
             const data = await response.json();
-            audioPlayer.src = data.audioUrl;
+            audioPlayer.src = data.audioFile;
             audioPlayer.crossOrigin = "anonymous";
             audioPlayer.style.display = 'block';
             canvas.style.display = 'block';
@@ -75,36 +72,58 @@ document.addEventListener('DOMContentLoaded', () => {
             alert(error.message);
         } finally {
             generateButton.disabled = false;
-            loader.style.display = 'none';
+            ttsLoader.style.display = 'none';
         }
     });
 
-    // --- SECTION 2: ECHO BOT LOGIC ---
+    // --- SECTION 2: AI VOICE CHAT LOGIC ---
     const startButton = document.getElementById('start-recording-button');
     const stopButton = document.getElementById('stop-recording-button');
-    const echoAudioPlayer = document.getElementById('echo-audio-player');
-    const echoSection = document.querySelector('.echo-section') || document.querySelector('.echo-audio-section');
-    const echoButton = document.getElementById('echo-button');
-    const echoStatus = document.getElementById('echo-status');
     const resetButton = document.getElementById('reset-button');
+    const responseAudioPlayer = document.getElementById('response-audio-player');
+    const responseLoader = document.getElementById('response-loader');
+    const responseStatus = document.getElementById('response-status');
+    const transcriptDisplay = document.getElementById('transcript-display');
+    const llmResponseContainer = document.getElementById('llm-response-container');
 
     let mediaRecorder;
     let audioChunks = [];
-    let stream; 
-    let recordedAudioBlob;
+    let stream;
 
-    echoAudioPlayer.style.display = 'none';
-    stopButton.disabled = true;
-    if(echoSection) echoSection.style.display = 'none';
+    function resetUI() {
+        if (mediaRecorder && mediaRecorder.state === "recording") {
+            mediaRecorder.stop();
+        }
+        if (stream) {
+            stream.getTracks().forEach(track => track.stop());
+            stream = null;
+        }
+        responseAudioPlayer.pause();
+        responseAudioPlayer.src = '';
+
+        startButton.disabled = false;
+        stopButton.disabled = true;
+        resetButton.disabled = false;
+        startButton.classList.remove('recording');
+        responseAudioPlayer.style.display = 'none';
+        responseLoader.style.display = 'none';
+        responseStatus.textContent = '';
+        transcriptDisplay.textContent = '';
+        llmResponseContainer.textContent = '';
+        audioChunks = [];
+    }
+    
+    resetUI();
 
     startButton.addEventListener('click', async () => {
+        // Only reset the visual state, don't stop an active stream here.
+        resetUI();
         try {
             stream = await navigator.mediaDevices.getUserMedia({ audio: true });
             startButton.disabled = true;
             stopButton.disabled = false;
+            resetButton.disabled = false; // Keep reset enabled
             startButton.classList.add('recording');
-            if(echoSection) echoSection.style.display = 'none';
-            echoAudioPlayer.style.display = 'none';
             audioChunks = [];
             
             mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm;codecs=opus' });
@@ -113,24 +132,61 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (event.data.size > 0) audioChunks.push(event.data);
             });
 
-            mediaRecorder.onstop = () => {
-                recordedAudioBlob = new Blob(audioChunks, { type: 'audio/webm' });
-                if(echoSection) echoSection.style.display = 'block';
-                if(echoStatus) echoStatus.textContent = 'Recording ready. Click "Echo Voice".';
+            mediaRecorder.onstop = async () => {
+                const recordedAudioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+                
+                if (stream) {
+                    stream.getTracks().forEach(track => track.stop());
+                    stream = null;
+                }
                 
                 startButton.disabled = false;
                 stopButton.disabled = true;
                 startButton.classList.remove('recording');
-                stream.getTracks().forEach(track => track.stop());
+
+                if (recordedAudioBlob.size === 0) {
+                    resetUI();
+                    return;
+                }
+
+                const formData = new FormData();
+                formData.append('audio_file', recordedAudioBlob, 'recording.webm');
+                
+                responseStatus.textContent = "Thinking...";
+                responseLoader.style.display = 'flex';
+
+                
+                try {
+                    const response = await fetch('/llm/query', {
+                        method: 'POST',
+                        body: formData,
+                    });
+                    if (!response.ok) throw new Error((await response.json()).detail);
+                    
+                    const result = await response.json();
+                    
+                    transcriptDisplay.textContent = `You said: "${result.transcribedText}"`;
+                    llmResponseContainer.textContent = result.responseText;
+                    responseAudioPlayer.src = result.audioUrl;
+                    responseAudioPlayer.crossOrigin = "anonymous";
+                    responseAudioPlayer.style.display = 'block';
+                    responseAudioPlayer.play();
+                    responseStatus.textContent = "Response generated!";
+                    
+                } catch (error) {
+                    responseStatus.textContent = `Error: ${error.message}`;
+                } finally {
+                    responseLoader.style.display = 'none';
+                    startButton.disabled = false;
+                    resetButton.disabled = false;
+                }
             };
 
-            // --- FIXED: Start recording with a timeslice ---
-            // This forces the 'dataavailable' event to fire every 250ms,
-            // ensuring we capture audio chunks reliably.
             mediaRecorder.start(250);
 
         } catch (error) {
-            alert("Could not access microphone. Please ensure you have given permission in your browser settings.");
+            alert("Could not access microphone.");
+            resetUI();
         }
     });
 
@@ -140,58 +196,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    resetButton.addEventListener('click', () => {
-        // Stop recording if it's in progress
-        if (mediaRecorder && mediaRecorder.state === "recording") {
-            mediaRecorder.stop();
-        }
-        // Hide the echo section and player
-        if(echoSection) echoSection.style.display = 'none';
-        echoAudioPlayer.style.display = 'none';
-        echoAudioPlayer.src = ''; // Clear the audio source
-        
-        // Reset button states
-        startButton.disabled = false;
-        stopButton.disabled = true;
-        startButton.classList.remove('recording');
-        
-        // Clear data
-        recordedAudioBlob = null;
-        audioChunks = [];
+    resetButton.addEventListener('click', resetUI);
     });
 
-    echoButton.addEventListener('click', async () => {
-        if (!recordedAudioBlob || recordedAudioBlob.size === 0) {
-            alert("No recording available or recording is empty.");
-            return;
-        }
-        const formData = new FormData();
-        formData.append('audio_file', recordedAudioBlob, 'recording.webm');
-        
-        if(echoStatus) echoStatus.textContent = "Echoing... please wait.";
-        echoButton.disabled = true;
-
-        try {
-            const response = await fetch('/tts/echo', {
-                method: 'POST',
-                body: formData,
-            });
-            if (!response.ok) throw new Error((await response.json()).detail);
-            
-            const result = await response.json();
-            echoAudioPlayer.src = result.audioUrl;
-            echoAudioPlayer.crossOrigin = "anonymous";
-            echoAudioPlayer.style.display = 'block';
-            echoAudioPlayer.play();
-            
-            if(echoStatus) echoStatus.textContent = "Echo successful!";
-            setTimeout(() => { if(echoStatus) echoStatus.textContent = ''; }, 4000);
-
-        } catch (error) {
-            console.error("Echo error:", error);
-            if(echoStatus) echoStatus.textContent = `Error: ${error.message}`;
-        } finally {
-            echoButton.disabled = false;
-        }
-    });
-});
