@@ -1,7 +1,7 @@
 import os
 import requests
 from fastapi import FastAPI, HTTPException, Request, File, UploadFile
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, FileResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 import assemblyai as aai
 import google.generativeai as genai
 import re
+
 
 # --- 1. SETUP AND CONFIGURATION ---
 
@@ -47,6 +48,9 @@ class TTSRequest(BaseModel):
 class LLMQueryRequest(BaseModel):
     text: str
 
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon():
+    return FileResponse("static/favicon.ico")
 
 @app.get("/",response_class=HTMLResponse)
 async def read_root(request: Request):

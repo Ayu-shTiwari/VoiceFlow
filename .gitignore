@@ -35,3 +35,5 @@ ss/
 
 #uploaded audio files
 uploads/
+
+static/favicon_ico
