@@ -83,50 +83,55 @@ document.addEventListener('DOMContentLoaded', () => {
     const responseAudioPlayer = document.getElementById('response-audio-player');
     const responseLoader = document.getElementById('response-loader');
     const responseStatus = document.getElementById('response-status');
-    // NEW: Get reference to the conversation log container
-    const conversationDiv = document.getElementById('conversationDiv'); 
+    const conversationDiv = document.getElementById('conversationDiv');
+    // Note: The TTS Form elements are separate and their logic is not included here
+    // to focus on the main voice chat functionality.
 
+    // --- 2. STATE VARIABLES ---
     let mediaRecorder;
     let audioChunks = [];
-    let stream;
-    let sessionId = null; // NEW: Variable to hold the session ID
+    let sessionId = null;
 
-    // NEW: Session management logic
-    const urlParams = new URLSearchParams(window.location.search);
-    const existingSessionId = urlParams.get('session_id');
+    // --- 3. CORE FUNCTIONS ---
 
-    const loadHistory = async (sid) => {
-        try {
-            const response = await fetch(`/agent/history/${sid}`);
-            if (!response.ok) {
-                throw new Error("Could not fetch history.");
-            }
-            const history = await response.json();
-            // Clear any existing messages before loading new ones
-            conversationDiv.innerHTML = ''; 
-            history.forEach(message => {
-                displayMessage(message.role, message.content);
-            });
-            responseStatus.textContent = "Resumed session. Click 'Start Recording'.";
-        } catch (error) {
-            console.error("History loading error:", error);
-            responseStatus.textContent = "Could not load session history.";
+    /**
+     * Updates all UI elements based on the application's current state.
+     * This centralizes UI logic and prevents bugs.
+     * @param {string} state - The current state (e.g., 'initial', 'recording', 'thinking', 'playing', 'error').
+     * @param {string} [message] - An optional message to display.
+     */
+    const updateUIState = (state, message = '') => {
+        startButton.disabled = !['initial', 'ready', 'error'].includes(state);
+        stopButton.disabled = state !== 'recording';
+        responseLoader.style.display = state === 'thinking' ? 'flex' : 'none';
+
+        switch (state) {
+            case 'initial':
+                responseStatus.textContent = message || "Initializing...";
+                break;
+            case 'ready':
+                responseStatus.textContent = message || 'Ready. Click to speak.';
+                break;
+            case 'recording':
+                responseStatus.textContent = 'Recording...';
+                break;
+            case 'thinking':
+                responseStatus.textContent = 'Thinking...';
+                break;
+            case 'playing':
+                responseStatus.textContent = 'Playing response...';
+                break;
+            case 'error':
+                responseStatus.textContent = `Error: ${message}`;
+                break;
         }
     };
     
-    if (existingSessionId) {
-        sessionId = existingSessionId;
-        loadHistory(sessionId);
-        responseStatus.textContent = "Resumed session. Click 'Start Recording'.";
-    } else {
-        sessionId = crypto.randomUUID();
-        const newUrl = `${window.location.pathname}?session_id=${sessionId}`;
-        window.history.pushState({ path: newUrl }, '', newUrl);
-        responseStatus.textContent = "New session started. Click 'Start Recording'.";
-    }
-
-    // NEW: Function to display messages in the log
+    /**
+     * Displays a message in the conversation log.
+     */
     const displayMessage = (role, text) => {
+        if (!text) return; // Don't display empty or null messages
         const messageElement = document.createElement('div');
         messageElement.classList.add('message', `${role}-message`);
         messageElement.innerHTML = `<strong>${role === 'user' ? 'You' : 'Assistant'}:</strong> <span>${text}</span>`;
@@ -134,122 +139,119 @@ document.addEventListener('DOMContentLoaded', () => {
         conversationDiv.scrollTop = conversationDiv.scrollHeight; // Auto-scroll
     };
 
-    function resetUI() {
-        if (mediaRecorder && mediaRecorder.state === "recording") {
-            mediaRecorder.stop();
+    /**
+     * Handles the logic after recording stops: sends audio to the server and processes the response.
+     */
+    const handleRecordingStop = async () => {
+        const recordedAudioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+        if (recordedAudioBlob.size === 0) {
+            updateUIState('ready', 'Nothing recorded. Please try again.');
+            return;
         }
-        if (stream) {
-            stream.getTracks().forEach(track => track.stop());
-            stream = null;
-        }
-        responseAudioPlayer.pause();
-        responseAudioPlayer.src = '';
 
-        startButton.disabled = false;
-        stopButton.disabled = true;
-        resetButton.disabled = false;
-        startButton.classList.remove('recording');
-        responseAudioPlayer.style.display = 'none';
-        responseLoader.style.display = 'none';
-        responseStatus.textContent = 'Click Start Recording to begin.';
-        // We don't clear the conversationDiv on reset anymore
-        audioChunks = [];
-    }
-    
-    resetUI();
+        updateUIState('thinking');
+        const formData = new FormData();
+        formData.append('audio_file', recordedAudioBlob, 'recording.webm');
+
+        try {
+            const response = await fetch(`/agent/chat/${sessionId}`, { method: 'POST', body: formData });
+            const result = await response.json();
+
+            // Check the 'error' flag from our server's structured response
+            if (result.error) {
+            // Display the fallback text sent from the server
+            displayMessage('assistant', result.responseText);
+            responseAudioPlayer.src = result.fallbackAudioUrl;
+            
+            } else {
+                displayMessage('user', result.transcribedText);
+                displayMessage('assistant', result.responseText);
+                responseAudioPlayer.src = result.audioUrl;
+            }
+            
+            if (responseAudioPlayer.src) {
+                responseAudioPlayer.style.display = 'block';
+                responseAudioPlayer.play();
+            } else {
+                // Handle cases where no audio is returned (e.g., "I didn't hear anything")
+                updateUIState('ready');
+            }
+
+        } catch (error) {
+            // This catches fatal network errors or if the response isn't valid JSON
+            console.error("Fatal Error:", error);
+            updateUIState('error', 'A connection error occurred.');
+        }
+    };
+
+    /**
+     * Initializes the session on page load.
+     */
+    const initializeSession = async () => {
+        updateUIState('initial');
+        const urlParams = new URLSearchParams(window.location.search);
+        sessionId = urlParams.get('session_id');
+
+        if (sessionId) {
+            // Resuming an existing session
+            console.log("Resuming session:", sessionId);
+            try {
+                const response = await fetch(`/agent/history/${sessionId}`);
+                if (!response.ok) throw new Error("Could not fetch history.");
+                const history = await response.json();
+                conversationDiv.innerHTML = '';
+                history.forEach(msg => displayMessage(msg.role, msg.content));
+                updateUIState('ready', 'Resumed session. Click to speak.');
+            } catch (error) {
+                console.error("History loading error:", error);
+                updateUIState('error', 'Could not load session history.');
+            }
+        } else {
+            // Starting a new session
+            sessionId = crypto.randomUUID();
+            const newUrl = `${window.location.pathname}?session_id=${sessionId}`;
+            window.history.pushState({ path: newUrl }, '', newUrl);
+            console.log("Started new session:", sessionId);
+            updateUIState('ready', 'New session started. Click to speak.');
+        }
+    };
+
+    // --- 4. EVENT LISTENERS ---
 
     startButton.addEventListener('click', async () => {
         try {
-            stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            startButton.disabled = true;
-            stopButton.disabled = false;
-            startButton.classList.add('recording');
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
             audioChunks = [];
+            mediaRecorder = new MediaRecorder(stream);
+            mediaRecorder.ondataavailable = (event) => audioChunks.push(event.data);
+            mediaRecorder.onstop = handleRecordingStop;
             
-            mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm;codecs=opus' });
-            
-            mediaRecorder.addEventListener('dataavailable', event => {
-                if (event.data.size > 0) audioChunks.push(event.data);
-            });
-
-            mediaRecorder.onstop = async () => {
-                const recordedAudioBlob = new Blob(audioChunks, { type: 'audio/webm' });
-                
-                if (stream) {
-                    stream.getTracks().forEach(track => track.stop());
-                    stream = null;
-                }
-                
-                startButton.classList.remove('recording');
-
-                if (recordedAudioBlob.size === 0) {
-                    resetUI();
-                    return;
-                }
-
-                const formData = new FormData();
-                formData.append('audio_file', recordedAudioBlob, 'recording.webm');
-                
-                responseStatus.textContent = "Thinking...";
-                responseLoader.style.display = 'flex';
-                
-                try {
-                    // UPDATED: Fetch call to the new conversational endpoint
-                    const response = await fetch(`/agent/chat/${sessionId}`, {
-                        method: 'POST',
-                        body: formData,
-                    });
-                    if (!response.ok) throw new Error((await response.json()).detail);
-                    
-                    const result = await response.json();
-                    
-                    // UPDATED: Use the new display function
-                    displayMessage('user', result.transcribedText);
-                    displayMessage('assistant', result.responseText);
-                    
-                    responseAudioPlayer.src = result.audioUrl;
-                    responseAudioPlayer.crossOrigin = "anonymous";
-                    responseAudioPlayer.style.display = 'block';
-                    responseAudioPlayer.play();
-                    responseStatus.textContent = "Playing response...";
-                    
-                } catch (error) {
-                    responseStatus.textContent = `Error: ${error.message}`;
-                } finally {
-                    responseLoader.style.display = 'none';
-                    startButton.disabled = false;
-                }
-            };
-
             mediaRecorder.start();
-
+            updateUIState('recording');
         } catch (error) {
-            alert("Could not access microphone.");
-            resetUI();
+            console.error("Microphone access error:", error);
+            alert("Could not access microphone. Please grant permission in your browser settings.");
+            updateUIState('error', 'Microphone access denied.');
         }
     });
 
     stopButton.addEventListener('click', () => {
-        if (mediaRecorder && mediaRecorder.state === "recording") {
+        if (mediaRecorder?.state === "recording") {
             mediaRecorder.stop();
         }
     });
 
     resetButton.addEventListener('click', () => {
-        // Reset now clears the conversation and forces a new session
+        // Start a completely new session by navigating to the base URL
         window.location.href = window.location.pathname;
     });
-    // When the Ai audio is playing:
-    responseAudioPlayer.onplay = () => {
-        responseStatus.textContent = 'Playing response...';
-        startButton.disabled = true;
-        stopButton.disabled = true;
-    };
-    // NEW: Auto-record after response is played
-    responseAudioPlayer.onended = responseAudioPlayer.onpause = () => {
-        responseStatus.textContent = 'Response finished. Starting next recording...';
-        // A small delay to feel more natural
-        startButton.disabled = false;
-        stopButton.disabled = true;
-    };
+
+    responseAudioPlayer.addEventListener('play', () => updateUIState('playing'));
+    responseAudioPlayer.addEventListener('ended', () => updateUIState('ready'));
+    responseAudioPlayer.addEventListener('pause', () => updateUIState('ready'));
+
+    // --- 5. INITIALIZE THE APPLICATION ---
+    initializeSession();
+
+    // --- (Your separate TTS Form logic can remain here if needed) ---
 });
