@@ -83,12 +83,56 @@ document.addEventListener('DOMContentLoaded', () => {
     const responseAudioPlayer = document.getElementById('response-audio-player');
     const responseLoader = document.getElementById('response-loader');
     const responseStatus = document.getElementById('response-status');
-    const transcriptDisplay = document.getElementById('transcript-display');
-    const llmResponseContainer = document.getElementById('llm-response-container');
+    // NEW: Get reference to the conversation log container
+    const conversationDiv = document.getElementById('conversationDiv'); 
 
     let mediaRecorder;
     let audioChunks = [];
     let stream;
+    let sessionId = null; // NEW: Variable to hold the session ID
+
+    // NEW: Session management logic
+    const urlParams = new URLSearchParams(window.location.search);
+    const existingSessionId = urlParams.get('session_id');
+
+    const loadHistory = async (sid) => {
+        try {
+            const response = await fetch(`/agent/history/${sid}`);
+            if (!response.ok) {
+                throw new Error("Could not fetch history.");
+            }
+            const history = await response.json();
+            // Clear any existing messages before loading new ones
+            conversationDiv.innerHTML = ''; 
+            history.forEach(message => {
+                displayMessage(message.role, message.content);
+            });
+            responseStatus.textContent = "Resumed session. Click 'Start Recording'.";
+        } catch (error) {
+            console.error("History loading error:", error);
+            responseStatus.textContent = "Could not load session history.";
+        }
+    };
+    
+    if (existingSessionId) {
+        sessionId = existingSessionId;
+        loadHistory(sessionId);
+        responseStatus.textContent = "Resumed session. Click 'Start Recording'.";
+    } else {
+        sessionId = crypto.randomUUID();
+        const newUrl = `${window.location.pathname}?session_id=${sessionId}`;
+        window.history.pushState({ path: newUrl }, '', newUrl);
+        responseStatus.textContent = "New session started. Click 'Start Recording'.";
+    }
+
+    // NEW: Function to display messages in the log
+    const displayMessage = (role, text) => {
+        const messageElement = document.createElement('div');
+        messageElement.classList.add('message', `${role}-message`);
+        messageElement.innerHTML = `<strong>${role === 'user' ? 'You' : 'Assistant'}:</strong> <span>${text}</span>`;
+        conversationDiv.appendChild(messageElement);
+        conversationDiv.scrollTop = conversationDiv.scrollHeight; // Auto-scroll
+    };
 
     function resetUI() {
         if (mediaRecorder && mediaRecorder.state === "recording") {
@@ -107,22 +151,18 @@ document.addEventListener('DOMContentLoaded', () => {
         startButton.classList.remove('recording');
         responseAudioPlayer.style.display = 'none';
         responseLoader.style.display = 'none';
-        responseStatus.textContent = '';
-        transcriptDisplay.textContent = '';
-        llmResponseContainer.textContent = '';
+        responseStatus.textContent = 'Click Start Recording to begin.';
+        // We don't clear the conversationDiv on reset anymore
         audioChunks = [];
     }
     
     resetUI();
 
     startButton.addEventListener('click', async () => {
-        // Only reset the visual state, don't stop an active stream here.
-        resetUI();
         try {
             stream = await navigator.mediaDevices.getUserMedia({ audio: true });
             startButton.disabled = true;
             stopButton.disabled = false;
-            resetButton.disabled = false; // Keep reset enabled
             startButton.classList.add('recording');
             audioChunks = [];
             
@@ -140,8 +180,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     stream = null;
                 }
                 
-                startButton.disabled = false;
-                stopButton.disabled = true;
                 startButton.classList.remove('recording');
 
                 if (recordedAudioBlob.size === 0) {
@@ -154,10 +192,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 
                 responseStatus.textContent = "Thinking...";
                 responseLoader.style.display = 'flex';
-
                 
                 try {
-                    const response = await fetch('/llm/query', {
+                    // UPDATED: Fetch call to the new conversational endpoint
+                    const response = await fetch(`/agent/chat/${sessionId}`, {
                         method: 'POST',
                         body: formData,
                     });
@@ -165,24 +203,25 @@ document.addEventListener('DOMContentLoaded', () => {
                     
                     const result = await response.json();
                     
-                    transcriptDisplay.textContent = `You said: "${result.transcribedText}"`;
-                    llmResponseContainer.textContent = result.responseText;
+                    // UPDATED: Use the new display function
+                    displayMessage('user', result.transcribedText);
+                    displayMessage('assistant', result.responseText);
+                    
                     responseAudioPlayer.src = result.audioUrl;
                     responseAudioPlayer.crossOrigin = "anonymous";
                     responseAudioPlayer.style.display = 'block';
                     responseAudioPlayer.play();
-                    responseStatus.textContent = "Response generated!";
+                    responseStatus.textContent = "Playing response...";
                     
                 } catch (error) {
                     responseStatus.textContent = `Error: ${error.message}`;
                 } finally {
                     responseLoader.style.display = 'none';
                     startButton.disabled = false;
-                    resetButton.disabled = false;
                 }
             };
 
-            mediaRecorder.start(250);
+            mediaRecorder.start();
 
         } catch (error) {
             alert("Could not access microphone.");
@@ -196,6 +235,21 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    resetButton.addEventListener('click', resetUI);
+    resetButton.addEventListener('click', () => {
+        // Reset now clears the conversation and forces a new session
+        window.location.href = window.location.pathname;
     });
-
+    // When the Ai audio is playing:
+    responseAudioPlayer.onplay = () => {
+        responseStatus.textContent = 'Playing response...';
+        startButton.disabled = true;
+        stopButton.disabled = true;
+    };
+    // NEW: Auto-record after response is played
+    responseAudioPlayer.onended = responseAudioPlayer.onpause = () => {
+        responseStatus.textContent = 'Response finished. Starting next recording...';
+        // A small delay to feel more natural
+        startButton.disabled = false;
+        stopButton.disabled = true;
+    };
+});

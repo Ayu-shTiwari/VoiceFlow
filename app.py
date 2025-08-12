@@ -1,17 +1,19 @@
 import os
 import requests
-from fastapi import FastAPI, HTTPException, Request, File, UploadFile
+from fastapi import FastAPI, HTTPException, Request, File, UploadFile, Form
 from fastapi.responses import HTMLResponse, FileResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from dotenv import load_dotenv
 import assemblyai as aai
 import google.generativeai as genai
 import re
+import json
+from contextlib import asynccontextmanager
 
 
-# --- 1. SETUP AND CONFIGURATION ---
 
 load_dotenv()
 app = FastAPI()
@@ -36,6 +38,44 @@ if not GEMINI_API_KEY:
     raise RuntimeError("GEMINI_API_KEY not found in .env file.")
 genai.configure(api_key=GEMINI_API_KEY)
 
+
+# --- new chat history setup ---
+HISTORY_FILE = "chat_history.json"
+# 2. This dictionary will hold all conversation histories while the server is running.
+chat_histories = {}
+def load_history():
+    """
+    Safely loads history from the JSON file.
+    Handles errors if the file is empty or corrupted.
+    """
+    global chat_histories
+    if os.path.exists(HISTORY_FILE):
+        try:
+            with open(HISTORY_FILE, "r") as f:
+                # We check if the file is not empty before trying to load
+                if os.path.getsize(HISTORY_FILE) > 0:
+                    chat_histories = json.load(f)
+                    print("✅ Chat history loaded successfully.")
+                else:
+                    print("⚠️ History file is empty. Starting fresh.")
+                    chat_histories = {} # Ensure it's a clean dict
+        except (json.JSONDecodeError, IOError) as e:
+            # If file is corrupted or can't be read, start with an empty history
+            print(f"❌ Error loading history file: {e}. Starting with a fresh history.")
+            chat_histories = {}
+    else:
+        print("⚠️ No history file found. Starting fresh.")
+        chat_histories = {}
+
+
+def save_history():
+    """Saves the in-memory chat_histories dict to the JSON file."""
+    with open(HISTORY_FILE, "w") as f:
+        json.dump(chat_histories, f, indent=4)
+
+
+# --- UPDATED: Lifespan manager with shutdown saving ---
+
 # --- 3. PYDANTIC MODELS ---
 
 class TTSRequest(BaseModel):
@@ -48,6 +88,21 @@ class TTSRequest(BaseModel):
 class LLMQueryRequest(BaseModel):
     text: str
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """
+    Manages startup and shutdown events.
+    """
+    # --- Startup ---
+    print("Server is starting up...")
+    load_history()
+    
+    yield # The application runs here
+    
+    # --- Shutdown ---
+    print("Server is shutting down. Saving history...")
+    save_history()
+    
 @app.get("/favicon.ico", include_in_schema=False)
 async def favicon():
     return FileResponse("static/favicon.ico")
@@ -179,3 +234,86 @@ async def llm_query(audio_file: UploadFile = File(...)):
     except Exception as e:
         print(f"An error occurred in the LLM query endpoint: {e}")
         raise HTTPException(status_code=500, detail=f"An internal server error occurred: {str(e)}")
+
+
+@app.get("/agent/history/{session_id}")
+async def get_history(session_id: str):
+    """
+    Retrieves the chat history for a given session ID.
+    """
+    if session_id in chat_histories:
+        return chat_histories[session_id]
+    else:
+        # It's okay if a new session has no history yet.
+        return []
+
+
+@app.post("/agent/chat/{session_id}")
+async def agent_chat(session_id: str, audio_file: UploadFile = File(...)):
+    """
+    Handles a full conversational turn: Audio -> STT -> History -> LLM -> History -> TTS -> Audio
+    """
+    global chat_histories
+    
+    try:
+        # Step 1: Transcribe audio
+        audio_data = await audio_file.read()
+        transcriber = aai.Transcriber()
+        transcript = transcriber.transcribe(audio_data)
+
+        if transcript.status == aai.TranscriptStatus.error:
+            raise HTTPException(status_code=500, detail=f"Transcription failed: {transcript.error}")
+        
+        user_text = transcript.text
+        if not user_text:
+            raise HTTPException(status_code=400, detail="No speech detected in the audio.")
+        
+        #step 2: retrive and Update History ---
+        session_history = chat_histories.get(session_id,[])
+        session_history.append({"role": "user", "content": user_text})
+        gemini_formatted_history = []
+        for message in session_history:
+    # The 'assistant' role in our file must be sent as 'model' to the API
+            role = 'model' if message['role'] == 'assistant' else 'user'
+    
+            gemini_formatted_history.append({
+                'role': role,
+                'parts': [message['content']] # The text content is now inside a list
+            })
+
+        #step 3: Call the LLM with full context ---
+        model = genai.GenerativeModel('gemini-1.5-flash-latest')
+        #start a char session with existing history
+        chat = model.start_chat(history=gemini_formatted_history)
+        llm_response = chat.send_message(user_text)
+        llm_text = llm_response.text
+        
+        #step 4: Add LLM response to history and save ---
+        session_history.append({"role": "assistant", "content": llm_text})
+        chat_histories[session_id] = session_history
+        save_history()  # Save the updated history to file
+        
+        text_chunks = split_text_into_chunks(llm_text)
+        first_chunk = text_chunks[0]
+
+        headers = {"Content-Type": "application/json", "api-key": MURF_API_KEY}
+        murf_payload = {"text": first_chunk, "voice_id": "en-US-miles"}
+        
+        murf_response = requests.post(MURF_API_URL, headers=headers, json=murf_payload)
+        murf_response.raise_for_status()
+        murf_data = murf_response.json()
+        
+        # --- Step 6: Return the final response ---
+        return {
+            "audioUrl": murf_data.get("audioFile"),
+            "transcribedText": user_text,
+            "responseText": llm_text
+        }
+
+
+    except Exception as e:
+        print(f"An error occurred in the agent chat endpoint: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"An internal server error occurred: {str(e)}")
+

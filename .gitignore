@@ -37,3 +37,5 @@ ss/
 uploads/
 
 static/favicon_ico
+
+chat_history.json
