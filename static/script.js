@@ -1,96 +1,19 @@
 document.addEventListener('DOMContentLoaded', () => {
-    
-    // --- SECTION 1: TEXT-TO-SPEECH ---
-    const ttsForm = document.getElementById('tts-form');
-    const textInput = document.getElementById('text-input');
-    const generateButton = document.getElementById('generate-button');
-    const ttsLoader = document.getElementById('loader');
-    const audioPlayer = document.getElementById('audio-player');
-    const canvas = document.getElementById('visualizer-canvas');
-    const canvasCtx = canvas.getContext('2d');
+                                    // --- SECTION : AI VOICE CHAT LOGIC ---
 
-    let audioContext;
-    let analyser;
-
-    function setupAudioContext(audioElement) {
-        if (!audioContext) {
-            audioContext = new (window.AudioContext || window.webkitAudioContext)();
-        }
-        const source = audioContext.createMediaElementSource(audioElement);
-        analyser = audioContext.createAnalyser();
-        source.connect(analyser);
-        analyser.connect(audioContext.destination);
-    }
-
-    function draw() {
-        if (!analyser) return;
-        requestAnimationFrame(draw);
-        const bufferLength = analyser.frequencyBinCount;
-        const dataArray = new Uint8Array(bufferLength);
-        analyser.getByteFrequencyData(dataArray);
-        canvasCtx.clearRect(0, 0, canvas.width, canvas.height);
-        const barWidth = (canvas.width / bufferLength) * 2.5;
-        let barHeight;
-        let x = 0;
-        for (let i = 0; i < bufferLength; i++) {
-            barHeight = dataArray[i];
-            const gradient = canvasCtx.createLinearGradient(0, canvas.height, 0, canvas.height - barHeight);
-            gradient.addColorStop(0, '#7267d8');
-            gradient.addColorStop(1, '#a067d8');
-            canvasCtx.fillStyle = gradient;
-            canvasCtx.fillRect(x, canvas.height - barHeight, barWidth, barHeight);
-            x += barWidth + 1;
-        }
-    }
-
-    audioPlayer.style.display = 'none';
-    ttsLoader.style.display = 'none';
-    canvas.style.display = 'none';
-
-    ttsForm.addEventListener('submit', async (event) => {
-        event.preventDefault();
-        const text = textInput.value.trim();
-        if (!text) return;
-        generateButton.disabled = true;
-        ttsLoader.style.display = 'flex';
-        try {
-            const response = await fetch('/tts/generate', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ text: text }),
-            });
-            if (!response.ok) throw new Error((await response.json()).detail);
-            const data = await response.json();
-            audioPlayer.src = data.audioFile;
-            audioPlayer.crossOrigin = "anonymous";
-            audioPlayer.style.display = 'block';
-            canvas.style.display = 'block';
-            setupAudioContext(audioPlayer);
-            draw();
-            audioPlayer.play();
-        } catch (error) {
-            alert(error.message);
-        } finally {
-            generateButton.disabled = false;
-            ttsLoader.style.display = 'none';
-        }
-    });
-
-    // --- SECTION 2: AI VOICE CHAT LOGIC ---
-    const startButton = document.getElementById('start-recording-button');
-    const stopButton = document.getElementById('stop-recording-button');
-    const resetButton = document.getElementById('reset-button');
+    // --- 1. UI ELEMENTS ---
+    const recordButton = document.getElementById('recordButton');
+    const resetButton = document.getElementById('newChatButton');
     const responseAudioPlayer = document.getElementById('response-audio-player');
     const responseLoader = document.getElementById('response-loader');
     const responseStatus = document.getElementById('response-status');
     const conversationDiv = document.getElementById('conversationDiv');
-    // Note: The TTS Form elements are separate and their logic is not included here
-    // to focus on the main voice chat functionality.
 
     // --- 2. STATE VARIABLES ---
     let mediaRecorder;
     let audioChunks = [];
     let sessionId = null;
+    let isRecording = false;
 
     // --- 3. CORE FUNCTIONS ---
 
@@ -101,29 +24,22 @@ document.addEventListener('DOMContentLoaded', () => {
      * @param {string} [message] - An optional message to display.
      */
     const updateUIState = (state, message = '') => {
-        startButton.disabled = !['initial', 'ready', 'error'].includes(state);
-        stopButton.disabled = state !== 'recording';
-        responseLoader.style.display = state === 'thinking' ? 'flex' : 'none';
+        recordButton.disabled = state === 'thinking' || state === 'playing';
+        responseLoader.style.display = state === 'thinking' ? 'block' : 'none';
 
-        switch (state) {
-            case 'initial':
-                responseStatus.textContent = message || "Initializing...";
-                break;
-            case 'ready':
-                responseStatus.textContent = message || 'Ready. Click to speak.';
-                break;
-            case 'recording':
-                responseStatus.textContent = 'Recording...';
-                break;
-            case 'thinking':
-                responseStatus.textContent = 'Thinking...';
-                break;
-            case 'playing':
-                responseStatus.textContent = 'Playing response...';
-                break;
-            case 'error':
-                responseStatus.textContent = `Error: ${message}`;
-                break;
+        if(state === 'recording') {
+            recordButton.classList.add('recording');
+            recordButton.innerHTML = '<i class="fas fa-stop"></i>';
+        } else {
+            recordButton.classList.remove('recording');
+            recordButton.innerHTML = '<i class="fas fa-microphone"></i>';
+        }
+
+        if (message) {
+            responseStatus.textContent = message;
+        } else {
+            if (state === 'ready') responseStatus.textContent = 'Click the button to speak.';
+            if (state === 'playing') responseStatus.textContent = 'Playing response...';
         }
     };
     
@@ -134,9 +50,14 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!text) return; // Don't display empty or null messages
         const messageElement = document.createElement('div');
         messageElement.classList.add('message', `${role}-message`);
-        messageElement.innerHTML = `<strong>${role === 'user' ? 'You' : 'Assistant'}:</strong> <span>${text}</span>`;
+        const strong = document.createElement('strong');
+        strong.textContent = role === 'user' ? 'You: ' : 'Assistant: ';
+        const span = document.createElement('span');
+        span.textContent = text;
+        messageElement.appendChild(strong);
+        messageElement.appendChild(span);
         conversationDiv.appendChild(messageElement);
-        conversationDiv.scrollTop = conversationDiv.scrollHeight; // Auto-scroll
+        conversationDiv.scrollTop = conversationDiv.scrollHeight;// Auto-scroll
     };
 
     /**
@@ -145,6 +66,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const handleRecordingStop = async () => {
         const recordedAudioBlob = new Blob(audioChunks, { type: 'audio/webm' });
         if (recordedAudioBlob.size === 0) {
+            isRecording = false;
             updateUIState('ready', 'Nothing recorded. Please try again.');
             return;
         }
@@ -161,19 +83,18 @@ document.addEventListener('DOMContentLoaded', () => {
             if (result.error) {
             // Display the fallback text sent from the server
             displayMessage('assistant', result.responseText);
-            responseAudioPlayer.src = result.fallbackAudioUrl;
+            if(result.fallbackAudioUrl) responseAudioPlayer.src = result.fallbackAudioUrl;
             
             } else {
                 displayMessage('user', result.transcribedText);
                 displayMessage('assistant', result.responseText);
-                responseAudioPlayer.src = result.audioUrl;
+                if(result.audioUrl) responseAudioPlayer.src = result.audioUrl;
             }
             
             if (responseAudioPlayer.src) {
-                responseAudioPlayer.style.display = 'block';
                 responseAudioPlayer.play();
             } else {
-                // Handle cases where no audio is returned (e.g., "I didn't hear anything")
+                // Handle cases where no audio is returned
                 updateUIState('ready');
             }
 
@@ -183,7 +104,31 @@ document.addEventListener('DOMContentLoaded', () => {
             updateUIState('error', 'A connection error occurred.');
         }
     };
-
+    /**
+     * Starts the recording process.
+     */
+    const startRecording = async () => {
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            isRecording = true;
+            audioChunks = [];
+            mediaRecorder = new MediaRecorder(stream);
+            mediaRecorder.ondataavailable = (event) => audioChunks.push(event.data);
+            mediaRecorder.onstop = handleRecordingStop;
+            mediaRecorder.start();
+            updateUIState('recording', 'Listening...');
+        } catch (error) {
+            console.error("Microphone access error:", error);
+            alert("Could not access microphone. Please grant permission.");
+            updateUIState('error', 'Microphone access denied.');
+        }
+    };
+    const stopRecording = () => {
+        if (mediaRecorder?.state === "recording") {
+            mediaRecorder.stop();
+            isRecording = false;
+        }
+    }
     /**
      * Initializes the session on page load.
      */
@@ -218,26 +163,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- 4. EVENT LISTENERS ---
 
-    startButton.addEventListener('click', async () => {
-        try {
-            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            audioChunks = [];
-            mediaRecorder = new MediaRecorder(stream);
-            mediaRecorder.ondataavailable = (event) => audioChunks.push(event.data);
-            mediaRecorder.onstop = handleRecordingStop;
-            
-            mediaRecorder.start();
-            updateUIState('recording');
-        } catch (error) {
-            console.error("Microphone access error:", error);
-            alert("Could not access microphone. Please grant permission in your browser settings.");
-            updateUIState('error', 'Microphone access denied.');
-        }
-    });
-
-    stopButton.addEventListener('click', () => {
-        if (mediaRecorder?.state === "recording") {
-            mediaRecorder.stop();
+    recordButton.addEventListener('click', () => {
+        if (isRecording) {
+            stopRecording();
+        } else {
+            startRecording();
         }
     });
 
@@ -252,6 +182,4 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- 5. INITIALIZE THE APPLICATION ---
     initializeSession();
-
-    // --- (Your separate TTS Form logic can remain here if needed) ---
 });

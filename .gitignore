@@ -20,22 +20,11 @@ ENV/
 *.log
 Log.txt
 
-# OS files
-.DS_Store
-Thumbs.db
-
-# Python egg and build files
-*.egg
-*.egg-info/
-dist/
-build/
 
 #just random screenshots
 ss/
 
-#uploaded audio files
-uploads/
-
-static/favicon_ico
+static/favicon.ico
+static/background.jpg
 
 chat_history.json

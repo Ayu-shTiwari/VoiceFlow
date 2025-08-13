@@ -13,53 +13,25 @@
 <body>
 
     <div class="container">
-        <!-- Text-to-Speech Section -->
-        <h1>Text-to-Speech Generator</h1>
-        <p>Enter some text below and click the button to generate audio.</p>
-        <form id="tts-form">
-            <textarea id="text-input" placeholder="Type something here..." required></textarea>
-            <button type="submit" id="generate-button">
-                <i class="fas fa-volume-up"></i>
-                <span>Generate Sound</span>
+        <div class="header">
+            <h1>AI Voice Assistant</h1>
+            <p id="response-status">Click the button to start.</p>
+            <button id="newChatButton" class="new-chat-button">
+                <i class="fas fa-plus"></i> New Chat
             </button>
-        </form>
-        <div class="loader-container" id="loader">
-            <div class="loader"></div>
         </div>
-        <canvas id="visualizer-canvas"></canvas>
-        <audio id="audio-player" controls></audio>
-        
-        <!-- A horizontal line to separate the sections -->
-        <hr>
-        
-        <!-- ECHO BOT SECTION (Now inside the container) -->
-        <h1>AI Voice Chat</h1>
-        <div id="conversationDiv" class="conversation-log"></div>
-        <p>Click "Start Recording", ask a question, then click "Stop".</p>
-        <div class="button-group">
-            <button id="start-recording-button">
-                <i class="fas fa-microphone"></i>
-                <span>Start Recording</span>
-            </button>
-            <button id="stop-recording-button">
-                <i class="fas fa-stop-circle"></i>
-                <span>Stop Recording</span>
-            </button>
-            <button id="reset-button">
-                <i class="fas fa-sync-alt"></i>
-                <span>Reset</span>
-            </button>
-        </div>   
-        <p id="transcript-display"></p>
-        <!-- NEW: Container for the LLM's text response -->
-        <div id="llm-response-container"></div>
-         <!-- This audio player is now for the AI's response -->
-        <audio id="response-audio-player" controls></audio>
-        <div class="loader-container" id="response-loader">
-            <div class="loader"></div>
-        </div>
-        <p id="response-status"></p> <!-- For status messages -->
 
+        <div id="conversationDiv" class="conversation-log">
+            </div>
+
+        <div class="button-container">
+            <div class="loader-container" id="response-loader"></div>
+            <button id="recordButton" class="record-button">record
+                <i class="fas fa-microphone"></i>
+            </button>
+        </div>
+        
+        <audio id="response-audio-player"></audio>
     </div>
 
     <script src="/static/script.js"></script>

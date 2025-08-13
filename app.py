@@ -28,7 +28,7 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 if not all([MURF_API_KEY, ASSEMBLYAI_API_KEY, GEMINI_API_KEY]):
     raise RuntimeError("One or more API keys are missing from the .env file.")
 
-#aai.settings.api_key = ASSEMBLYAI_API_KEY
+aai.settings.api_key = ASSEMBLYAI_API_KEY
 genai.configure(api_key=GEMINI_API_KEY)
 
 # History and Fallback File Paths
@@ -140,24 +140,6 @@ async def read_root(request: Request):
 @app.get("/favicon.ico", include_in_schema=False)
 async def favicon():
     return FileResponse("static/favicon.ico")
-
-@app.post("/tts/generate")
-async def generate_tts_endpoint(request_body: TTSRequest):
-    """Endpoint for the simple Text-to-Speech functionality."""
-    # This endpoint remains largely unchanged, but simplified for clarity
-    try:
-        headers = {"Content-Type": "application/json", "api-key": MURF_API_KEY}
-        payload = {"text": request_body.text, "voice_id": "en-US-miles"}
-        response = requests.post(MURF_API_URL, headers=headers, json=payload)
-        response.raise_for_status()
-        data = response.json()
-        if "audioFile" in data:
-            return {"audioUrl": data["audioFile"]}
-        else:
-            raise HTTPException(status_code=500, detail="TTS API did not return an audio file.")
-    except Exception as e:
-        print(f"TTS generation error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/agent/history/{session_id}")
 async def get_history(session_id: str):
