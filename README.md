@@ -1,6 +1,6 @@
 <div align="center">
 
-# 🎙️ VoiceFlow AI
+# 🎙️ BabuBhaiya AI
 
 **A proof-of-concept for a fully voice-controlled AI assistant that can remember your conversations.**
 
