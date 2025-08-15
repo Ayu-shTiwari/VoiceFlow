@@ -4,6 +4,8 @@
 
 **A proof-of-concept for a fully voice-controlled AI assistant that can remember your conversations.**
 
+## 🌟 Features
+
 ![Python](https://img.shields.io/badge/Python-3776AB?style=for-the-badge&logo=python&logoColor=white)
 ![FastAPI](https://img.shields.io/badge/FastAPI-005571?style=for-the-badge&logo=fastapi&logoColor=white)
 ![JavaScript](https://img.shields.io/badge/JavaScript-F7DF1E?style=for-the-badge&logo=javascript&logoColor=black)
@@ -16,58 +18,66 @@ This project is a complete, end-to-end conversational agent built to feel like a
 
 ---
 
-## ✨ What It Can Do
+### Core Capabilities
+- **Voice-to-Voice Conversations**: Speak naturally and receive AI responses in Murf AI's natural voice
+- **Persistent Chat History**: AI remembers previous conversations across sessions
+- **Real-time Transcription**: Convert speech to text using AssemblyAI
+- **Intelligent Responses**: Powered by Google Gemini API
+- **Modern UI**: Glass-morphism design with smooth animations
+- **Error Handling**: Graceful fallbacks when APIs are unavailable
 
-- **Full Voice Conversations:** You can talk to it, and it talks back! The whole experience is driven by your voice, from asking a question to hearing the answer.
-- **It Remembers What You Said:** The assistant keeps track of the conversation, so you can ask follow-up questions naturally without having to repeat yourself.
-- **Pick Up Where You Left Off:** You can close the browser and come back to a conversation later just by using the session's unique URL.
-- **A Modern, Animated UI:** The interface is designed to be futuristic and intuitive, with animations that show you when the assistant is listening, thinking, or speaking.
-- **Handles Errors Gracefully:** If one of the AI services has a problem, the app won't crash. Instead, you'll hear a helpful message letting you know there's an issue.
+### Technical Features
+- **FastAPI Backend**: Modern, async Python web framework
+- **Session Management**: Unique conversation sessions via URL parameters
+- **Audio Processing**: Record, upload, and process audio files
+- **Multi-API Integration**: Seamless integration with multiple AI services
+- **Responsive Design**: Works on desktop and mobile devices
 
 ---
 
 ## 🛠️ The Tech Behind It
 
-| Category      | Technology / Service                                       |
-|---------------|------------------------------------------------------------|
-| **Backend** | Python, FastAPI                                            |
-| **Frontend** | HTML, CSS, JavaScript                                      |
-| **AI Services** |                                                            |
-| ↳ Language Model | [Google Gemini](https://aistudio.google.com/)            |
-| ↳ Speech-to-Text | [AssemblyAI](https://www.assemblyai.com/)                |
-| ↳ Text-to-Speech | [Murf AI](https://murf.ai/)                              |
+| Category             | Technology / Service                                     |
+|----------------------|----------------------------------------------------------|
+| **Backend**          | Python, FastAPI                                          |
+| **Frontend**         | HTML, CSS, JavaScript                                    |
+| **AI Services**      |                                                          |
+|     ↳ Language Model | [Google Gemini](https://aistudio.google.com/)            |
+|     ↳ Speech-to-Text | [AssemblyAI](https://www.assemblyai.com/)                |
+|     ↳ Text-to-Speech | [Murf AI](https://murf.ai/)                              |
+|**Templates**         |Jinja2
+| **Styling**          |Modern CSS with glass-morphism effects
 
 ---
 
 ### Project Structure
-
+```
 The project is organized into a clean, maintainable structure that separates concerns.
 /voiceflow-ai
 |
-|-- /schemas              # Pydantic models for API data structures 
+|-- /schemas                          # Pydantic models for API data structures 
 |   |-- chat_schemas.py
 |
-|-- /services             # Modules for external AI services (STT, LLM, TTS)
+|-- /services                         # Modules for external AI services (STT, LLM, TTS)
 |   |-- stt_service.py
 |   |-- llm_service.py
 |   |-- tts_service.py 
 |
-|-- /static               # Frontend assets
+|-- /static                           # Frontend assets
 |   |-- script.js
 |   |-- style.css
 |   |-- fallback_audio.mp3
 |   |-- background.jpg 
 |
 |-- /templates 
-|   -- index.html        # Main HTML file
+|   -- index.html                     # Main HTML file
 |
-|-- .env                  # For storing API keys
-|-- app.py                # The main FastAPI server
-|-- chat_history.json     # Stores conversation history
-|-- requirements.txt      # Python dependencies
-`-- README.md             # This file
-
----
+|-- .env                              # For storing API keys
+|-- app.py                            # The main FastAPI server
+|-- chat_history.json                 # Stores conversation history
+|-- requirements.txt                  # Python dependencies
+`-- README.md                         # This file
+```
 
 ## 🚀 How to Get It Running
 
@@ -76,13 +86,14 @@ Here’s how to get a copy of the project running on your own machine.
 ### What You'll Need
 
 - Python 3.8 or newer.
+- pip (Python package manager)
 - API keys from Murf AI, AssemblyAI, and Google AI Studio.
 
 ### Installation and Setup
 
 1.  **Clone the Repository**
     ```sh
-    git clone [[text](https://github.com/Ayu-shTiwari/VoiceAgent.git)](https://github.com/Ayu-shTiwari/VoiceAgent.git)
+    git clone https://github.com/Ayu-shTiwari/VoiceAgent.git
     cd voiceflow-ai
     ```
 
@@ -146,10 +157,40 @@ graph TD
 - **New Session:** Click the "New Chat" button in the top-right corner to start a fresh conversation.
 - **Continue a Session:** Simply use the URL with the `session_id` in it to pick up a conversation where you left off.
 
+#### Session Management
+- **New Session**: Visit `http://localhost:8000` for a new conversation
+- **Continue Session**: Use `http://localhost:8000/?session_id=your-session-id` to continue previous conversations
+
 ---
+## 🔧 Configuration
+
+### Environment Variables
+     All required API keys should be set in your `.env` file:
+```bash
+# Required - Get from respective service websites
+MURF_API_KEY=your_key_here
+GEMINI_API_KEY=your_key_here
+ASSEMBLYAI_API_KEY=your_key_here
+```
+### API Key Sources
+- **Murf AI**: https://murf.ai/
+- **Google Gemini**: https://makersuite.google.com/app/apikey
+- **AssemblyAI**: https://www.assemblyai.com/
+
+
 
 ## 🐛 Troubleshooting
 
-- **API Key Errors:** Ensure all API keys are correctly set in your `.env` file and that you have not exceeded any usage limits.
-- **Microphone Access:** Make sure you have granted microphone permissions to the browser for this site.
-- **Audio Playback Issues:** Check the browser console (F12) for any JavaScript errors that might be preventing the audio from playing.
+### Common Issues
+
+**1. API Key Errors**
+- Ensure all API keys are correctly set in `.env`
+- Check API key validity and quota limits
+
+**2. Microphone Access**
+- Ensure browser has microphone permissions
+- Check if HTTPS is required for microphone access
+
+**3. Audio Playback Issues**
+- Check browser console for JavaScript errors
+- Ensure audio format compatibility (MP3/WAV)
