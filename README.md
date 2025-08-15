@@ -39,6 +39,36 @@ This project is a complete, end-to-end conversational agent built to feel like a
 
 ---
 
+### Project Structure
+
+The project is organized into a clean, maintainable structure that separates concerns.
+/voiceflow-ai
+|
+|-- /schemas              # Pydantic models for API data structures 
+|   |-- chat_schemas.py
+|
+|-- /services             # Modules for external AI services (STT, LLM, TTS)
+|   |-- stt_service.py
+|   |-- llm_service.py
+|   |-- tts_service.py 
+|
+|-- /static               # Frontend assets
+|   |-- script.js
+|   |-- style.css
+|   |-- fallback_audio.mp3
+|   |-- background.jpg 
+|
+|-- /templates 
+|   -- index.html        # Main HTML file
+|
+|-- .env                  # For storing API keys
+|-- app.py                # The main FastAPI server
+|-- chat_history.json     # Stores conversation history
+|-- requirements.txt      # Python dependencies
+`-- README.md             # This file
+
+---
+
 ## 🚀 How to Get It Running
 
 Here’s how to get a copy of the project running on your own machine.
@@ -110,3 +140,16 @@ graph TD
     C -->|Sends Audio URL Back to| B;
     B -->|Plays the Audio| G[You Hear the Response];
 ```
+## 📖 Usage Guide
+
+- **Starting a Conversation:** Click the microphone button to start recording, speak your message, and click the button again to stop.
+- **New Session:** Click the "New Chat" button in the top-right corner to start a fresh conversation.
+- **Continue a Session:** Simply use the URL with the `session_id` in it to pick up a conversation where you left off.
+
+---
+
+## 🐛 Troubleshooting
+
+- **API Key Errors:** Ensure all API keys are correctly set in your `.env` file and that you have not exceeded any usage limits.
+- **Microphone Access:** Make sure you have granted microphone permissions to the browser for this site.
+- **Audio Playback Issues:** Check the browser console (F12) for any JavaScript errors that might be preventing the audio from playing.
