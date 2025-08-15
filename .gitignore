@@ -18,7 +18,8 @@ ENV/
 
 # Log files
 *.log
-Log.txt
+Daily journal.txt
+
 
 
 #just random screenshots
@@ -28,3 +29,5 @@ static/favicon.ico
 static/background.jpg
 
 chat_history.json
+
+media
