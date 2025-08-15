@@ -37,16 +37,48 @@ This project is a complete, end-to-end conversational agent built to feel like a
 
 ## 🛠️ The Tech Behind It
 
-| Category      | Technology / Service                                       |
-|---------------|------------------------------------------------------------|
-| **Backend** | Python, FastAPI                                            |
-| **Frontend** | HTML, CSS, JavaScript                                      |
-| **AI Services** |                                                            |
-| ↳ Language Model | [Google Gemini](https://aistudio.google.com/)            |
-| ↳ Speech-to-Text | [AssemblyAI](https://www.assemblyai.com/)                |
-| ↳ Text-to-Speech | [Murf AI](https://murf.ai/)                              |
+| Category             | Technology / Service                                     |
+|----------------------|----------------------------------------------------------|
+| **Backend**          | Python, FastAPI                                          |
+| **Frontend**         | HTML, CSS, JavaScript                                    |
+| **AI Services**      |                                                          |
+|     ↳ Language Model | [Google Gemini](https://aistudio.google.com/)            |
+|     ↳ Speech-to-Text | [AssemblyAI](https://www.assemblyai.com/)                |
+|     ↳ Text-to-Speech | [Murf AI](https://murf.ai/)                              |
+|**Templates**         |Jinja2
+| **Styling**          |Modern CSS with glass-morphism effects
 
 ---
+
+### Project Structure
+```
+The project is organized into a clean, maintainable structure that separates concerns.
+/voiceflow-ai
+|
+|-- /schemas                          # Pydantic models for API data structures 
+|   |-- chat_schemas.py
+|
+|-- /services                         # Modules for external AI services (STT, LLM, TTS)
+|   |-- stt_service.py
+|   |-- llm_service.py
+|   |-- tts_service.py 
+|
+|-- /static                           # Frontend assets
+|   |-- script.js
+|   |-- style.css
+|   |-- fallback_audio.mp3
+|   |-- background.jpg 
+|
+|-- /templates 
+|   -- index.html                     # Main HTML file
+|
+|-- .env                              # For storing API keys
+|-- app.py                            # The main FastAPI server
+|-- chat_history.json                 # Stores conversation history
+|-- requirements.txt                  # Python dependencies
+`-- README.md                         # This file
+```
+
 
 ## 🚀 How to Get It Running
 
@@ -120,3 +152,46 @@ graph TD
     C -->|Sends Audio URL Back to| B;
     B -->|Plays the Audio| G[You Hear the Response];
 ```
+## 📖 Usage Guide
+
+- **Starting a Conversation:** Click the microphone button to start recording, speak your message, and click the button again to stop.
+- **New Session:** Click the "New Chat" button in the top-right corner to start a fresh conversation.
+- **Continue a Session:** Simply use the URL with the `session_id` in it to pick up a conversation where you left off.
+
+#### Session Management
+- **New Session**: Visit `http://localhost:8000` for a new conversation
+- **Continue Session**: Use `http://localhost:8000/?session_id=your-session-id` to continue previous conversations
+
+---
+## 🔧 Configuration
+
+### Environment Variables
+     All required API keys should be set in your `.env` file:
+```bash
+# Required - Get from respective service websites
+MURF_API_KEY=your_key_here
+GEMINI_API_KEY=your_key_here
+ASSEMBLYAI_API_KEY=your_key_here
+```
+### API Key Sources
+- **Murf AI**: https://murf.ai/
+- **Google Gemini**: https://makersuite.google.com/app/apikey
+- **AssemblyAI**: https://www.assemblyai.com/
+
+
+
+## 🐛 Troubleshooting
+
+### Common Issues
+
+**1. API Key Errors**
+- Ensure all API keys are correctly set in `.env`
+- Check API key validity and quota limits
+
+**2. Microphone Access**
+- Ensure browser has microphone permissions
+- Check if HTTPS is required for microphone access
+
+**3. Audio Playback Issues**
+- Check browser console for JavaScript errors
+- Ensure audio format compatibility (MP3/WAV)
