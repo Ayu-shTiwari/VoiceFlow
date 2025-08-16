@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Union
 
 from fastapi import FastAPI, Request, File, UploadFile
+from fastapi import WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, FileResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
@@ -155,3 +156,30 @@ async def agent_chat(session_id: str, audio_file: UploadFile = File(...)):
             errorMessage=str(e),
             responseText=FALLBACK_ERROR_TEXT
         )
+       
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    """
+    Handles the WebSocket connection.
+    It accepts a connection and then enters a loop to listen for messages.
+    Any message it receives, it simply "echoes" back to the client.
+    """
+    await websocket.accept()
+    logging.info("websocket connection established.")
+    try:
+        while True:
+            data= await websocket.receive_text()
+            logging.info(f"Recieved message via websocket: {data}")
+            
+            response = f"server echoes: {data}"
+            await websocket.send_text(response)
+            logging.info(f"Sent message via Websocket: {response}")
+    
+    except WebSocketDisconnect:
+        logging.info("websocket client disconnected.")
+    except Exception as e:
+        logging.error(f"error occurred in websocket endpoint: {e}")
+    finally:
+        logging.info("websocket connection closed.")                
+            
+        
