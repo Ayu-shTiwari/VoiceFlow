@@ -166,20 +166,23 @@ async def websocket_endpoint(websocket: WebSocket):
     """
     await websocket.accept()
     logging.info("websocket connection established.")
+    output_file = "output.webm"
+    file_handle = None
     try:
-        while True:
-            data= await websocket.receive_text()
-            logging.info(f"Recieved message via websocket: {data}")
+        file_handle = open(output_file, "wb")
+        logging.info(f"Opened {output_file} for writing.")
             
-            response = f"server echoes: {data}"
-            await websocket.send_text(response)
-            logging.info(f"Sent message via Websocket: {response}")
+        while True:
+            data= await websocket.receive_bytes()
+            file_handle.write(data)
     
     except WebSocketDisconnect:
         logging.info("websocket client disconnected.")
     except Exception as e:
         logging.error(f"error occurred in websocket endpoint: {e}")
     finally:
-        logging.info("websocket connection closed.")                
+        if file_handle:
+            file_handle.close()
+        logging.info(f"finished recording. Audio saved to {output_file}")                
             
         

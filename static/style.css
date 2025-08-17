@@ -1,12 +1,10 @@
-/* --- 1. Root Variables for the Theme --- */
+/*
         :root {
             --primary-color: rgb(55, 67, 175);
             --text-color: #ffffff;
             --font-family: 'Roboto', sans-serif;
             --font-mono: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
         }
-
-        /* --- 2. New Background Image --- */
         body {
             font-family: var(--font-family);
             color: var(--text-color);
@@ -20,23 +18,21 @@
             background-position: center center;
         }
 
-        /* --- 3. More Transparent Glass Container --- */
         .container {
             width: 100%;
             max-width: 500px;
             height: 95vh;
             max-height: 700px;
-            /* Increased transparency */
             background: rgba(13, 17, 23, 0.5); 
             -webkit-backdrop-filter: blur(10px);
             backdrop-filter: blur(10px);
             border-radius: 16px;
             display: flex;
             flex-direction: column;
-            /* REMOVED BORDER AND SHADOW */
+            
         }
 
-        /* --- 4. All other styles are adjusted for the new look --- */
+       
         .header {
             padding: 16px;
             text-align: center;
@@ -91,12 +87,12 @@
             word-wrap: break-word;
         }
         .user-message {
-            background-color: rgba(33, 38, 45, 0.4); /* Even more transparent */
+            background-color: rgba(33, 38, 45, 0.4); 
             align-self: flex-end;
             border-bottom-right-radius: 4px;
         }
         .assistant-message {
-            background-color: rgba(26, 44, 71, 0.4); /* Even more transparent */
+            background-color: rgba(26, 44, 71, 0.4); 
             align-self: flex-start;
             border-bottom-left-radius: 4px;
         }
@@ -158,3 +154,111 @@
         #response-audio-player {
             display: none;
         }
+
+*/
+/* File: style.css */
+
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background-color: #f0f2f5;
+    color: #1c1e21;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+    margin: 0;
+}
+
+.container {
+    width: 100%;
+    max-width: 500px;
+    height: 80vh;
+    background-color: #ffffff;
+    border-radius: 12px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+h1 {
+    font-size: 1.5rem;
+    text-align: center;
+    padding: 20px;
+    margin: 0;
+    border-bottom: 1px solid #dddfe2;
+    color: #1877f2; /* A nice blue for the title */
+}
+
+#conversation {
+    flex-grow: 1;
+    overflow-y: auto;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+/* Basic message styling (not used yet, but good to have) */
+.message {
+    padding: 10px 15px;
+    border-radius: 18px;
+    max-width: 75%;
+    line-height: 1.4;
+}
+
+.user-message {
+    background-color: #e4e6eb;
+    align-self: flex-start;
+}
+
+.assistant-message {
+    background-color: #1877f2;
+    color: white;
+    align-self: flex-end;
+}
+
+.controls {
+    padding: 20px;
+    border-top: 1px solid #dddfe2;
+    display: flex;
+    justify-content: center;
+    gap: 15px;
+}
+
+button {
+    padding: 12px 24px;
+    font-size: 1rem;
+    font-weight: 600;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background-color 0.2s ease, transform 0.1s ease;
+}
+
+#startRecord {
+    background-color: #42b72a; /* Green for start */
+    color: white;
+}
+
+#startRecord:hover {
+    background-color: #36a420;
+}
+
+#stopRecord {
+    background-color: #fa3e3e; /* Red for stop */
+    color: white;
+}
+
+#stopRecord:hover {
+    background-color: #e03030;
+}
+
+button:disabled {
+    background-color: #ccd0d5;
+    cursor: not-allowed;
+}
+
+button:active {
+    transform: scale(0.98);
+}
