@@ -40,21 +40,6 @@ async def read_root(request: Request):
 async def favicon():
     return FileResponse("static/favicon.ico")
 
-# --- AssemblyAI Transcriber ---
-
-def on_begin(client: StreamingClient, event: BeginEvent):
-    logging.info(f"AssemblyAI Session started: {event.id}")
-
-def on_turn(client: StreamingClient, event: TurnEvent):
-    # Print live transcription text
-    logging.info(f"Transcript: {event.transcript} (End of turn: {event.end_of_turn})")
-
-def on_terminated(client: StreamingClient, event: TerminationEvent):
-    logging.info(f"Session terminated after {event.audio_duration_seconds} seconds")
-
-def on_error(client: StreamingClient, error: StreamingError):
-    logging.error(f"AssemblyAI streaming error: {error}")
-
 # --- WebSocket Endpoint ---
 
 @app.websocket("/ws")
@@ -62,41 +47,67 @@ async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
     logging.info("🎤 Client connected via WebSocket")
     
-    file_path = "recorded_audio.webm"
-    if os.path.exists(file_path):
-        os.remove(file_path)
-    logging.info(f"WebSocket connected. Writing audio to {file_path}")
+    # Get the current event loop to schedule tasks from another thread
+    loop = asyncio.get_running_loop()
+
+    # Define synchronous callbacks, not async ones
+    def on_begin(client: StreamingClient, event: BeginEvent):
+        logging.info(f"AssemblyAI Session started: {event.id}")
+
+    def on_turn(client: StreamingClient, event: TurnEvent):
+        transcript = event.transcript
+        is_final = event.end_of_turn
+        logging.info(f"Transcript: {transcript} (End of turn: {is_final})")
+        
+        if transcript:
+            # Create a coroutine to send the JSON data
+            coro = websocket.send_json({
+                "type": "transcript",
+                "transcript": transcript,
+                "is_final": is_final
+            })
+            # Schedule the coroutine on the main event loop from the current thread
+            asyncio.run_coroutine_threadsafe(coro, loop)
+
+    def on_terminated(client: StreamingClient, event: TerminationEvent):
+        logging.info(f"Session terminated after {event.audio_duration_seconds} seconds")
+
+    def on_error(client: StreamingClient, error: StreamingError):
+        logging.error(f"AssemblyAI streaming error: {error}")
+
+    # Initialize the AssemblyAI streaming client
     client = StreamingClient(
-        StreamingClientOptions(
-            api_key=aai.settings.api_key,
-            api_host="streaming.assemblyai.com"
-        )
+        StreamingClientOptions(api_key=aai.settings.api_key)
     )
+    
+    # Register the synchronous event handlers
     client.on(StreamingEvents.Begin, on_begin)
     client.on(StreamingEvents.Turn, on_turn)
     client.on(StreamingEvents.Termination, on_terminated)
     client.on(StreamingEvents.Error, on_error)
     
-    client.connect(
+    # Connect to the streaming service in a separate thread
+    await asyncio.to_thread(
+        client.connect,
         StreamingParameters(
             sample_rate=16000, 
             format_turns=True,
         )
     )
+    
     try:
+        # Main loop to receive audio data from the client
         while True:
             data = await websocket.receive()
             if "bytes" in data:
-                # Data is already PCM16, send directly to AssemblyAI in a thread.
+                # Stream audio bytes to AssemblyAI in a separate thread
                 await asyncio.to_thread(client.stream, data["bytes"])
             elif "text" in data and data["text"] == "END":
-                msg = data["text"]
-                logging.info(f"Text msg from received: {msg}")
+                logging.info("END message received. Closing connection.")
                 await asyncio.to_thread(client.disconnect)
                 break
     except WebSocketDisconnect:
-        logging.info(f"Client disconnected")
+        logging.info("Client disconnected")
     finally:
-        # Make sure the streaming client is closed
+        # Ensure the client is disconnected on exit
         await asyncio.to_thread(client.disconnect)
-

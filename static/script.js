@@ -10,7 +10,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let processor;
     let source;
     let stream;
-    let lastUserMessageDiv = null; // To update the partial transcript in place
+    let lastUserMessageDiv = null; // To update the transcript in place for a single turn
 
     // --- CORE FUNCTIONS ---
 
@@ -52,13 +52,8 @@ document.addEventListener('DOMContentLoaded', () => {
             processor.onaudioprocess = (event) => {
                 if (!socket || socket.readyState !== WebSocket.OPEN) return;
                 
-                // Get the raw audio data (Float32)
                 const inputData = event.inputBuffer.getChannelData(0);
-                
-                // Convert it to 16-bit PCM
                 const pcm16 = floatTo16BitPCM(inputData);
-                
-                // Send the raw PCM data over the WebSocket
                 socket.send(pcm16);
             };
 
@@ -87,12 +82,10 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         if (audioContext) audioContext.close();
 
-        // Close the WebSocket connection
         if (socket && socket.readyState === WebSocket.OPEN) {
             socket.close();
         }
 
-        // Update UI
         startRecordButton.disabled = false;
         stopRecordButton.disabled = true;
     }
@@ -110,7 +103,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         socket.onclose = () => {
             console.log("WebSocket connection closed.");
-            stopRecording(); // Ensure everything is cleaned up if the server closes the connection
+            stopRecording();
         };
 
         socket.onerror = (error) => {
@@ -129,27 +122,37 @@ document.addEventListener('DOMContentLoaded', () => {
     /**
      * Updates the conversation UI with partial or final transcripts.
      * @param {string} text - The transcribed text.
-     * @param {boolean} isFinal - True if the transcript is final.
+     * @param {boolean} isFinal - True if the transcript is for the end of a turn.
      */
     function updateTranscript(text, isFinal) {
-        if (!lastUserMessageDiv || isFinal) {
+        // If there's no active message div, create one for the new turn.
+        if (!lastUserMessageDiv) {
             lastUserMessageDiv = document.createElement('div');
             lastUserMessageDiv.classList.add('message', 'user-message');
+            
             const strong = document.createElement('strong');
             strong.textContent = 'You: ';
+            
             const span = document.createElement('span');
-            span.textContent = text;
+            
             lastUserMessageDiv.appendChild(strong);
             lastUserMessageDiv.appendChild(span);
             conversationDiv.appendChild(lastUserMessageDiv);
-        } else {
-            lastUserMessageDiv.querySelector('span').textContent = text;
         }
 
+        // Update the text content of the current turn's message.
+        lastUserMessageDiv.querySelector('span').textContent = text;
+
+        // If this is the final transcript for the turn, reset for the next one.
         if (isFinal) {
             lastUserMessageDiv.classList.add('final');
-            lastUserMessageDiv = null;
         }
+        else {
+            if (lastUserMessageDiv.classList.contains('final')) {
+                lastUserMessageDiv = null;
+            }
+        }
+        
         conversationDiv.scrollTop = conversationDiv.scrollHeight;
     }
 
