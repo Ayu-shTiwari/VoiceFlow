@@ -11,7 +11,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let source;
     let stream;
     let lastUserMessageDiv = null; // To update the transcript in place for a single turn
-
+    let lastAiMessageDiv = null; // To update the AI response in place for a single turn
     // --- CORE FUNCTIONS ---
 
     /**
@@ -61,6 +61,7 @@ document.addEventListener('DOMContentLoaded', () => {
             startRecordButton.disabled = true;
             stopRecordButton.disabled = false;
             lastUserMessageDiv = null;
+            lastAiMessageDiv = null;
 
         } catch (err) {
             console.error("Microphone access denied:", err);
@@ -83,7 +84,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (audioContext) audioContext.close();
 
         if (socket && socket.readyState === WebSocket.OPEN) {
-            socket.close();
+            socket.send("END"); // Notify server that recording has ended
         }
 
         startRecordButton.disabled = false;
@@ -94,6 +95,10 @@ document.addEventListener('DOMContentLoaded', () => {
      * Establishes the WebSocket connection and sets up its event handlers.
      */
     function connectWebSocket() {
+        if (socket && socket.readyState !== WebSocket.CLOSED) {
+            socket.close();
+        }
+
         socket = new WebSocket('ws://127.0.0.1:8000/ws');
 
         socket.onopen = () => {
@@ -116,6 +121,12 @@ document.addEventListener('DOMContentLoaded', () => {
             if (data.type === 'transcript') {
                 updateTranscript(data.transcript, data.is_final);
             }
+            if (data.type === 'llm_response') {
+                updateAIResponse(data.chunk);
+            }
+            if (data.type === 'llm_response_end') {
+                finalizeAIResponse();
+            }
         };
     }
 
@@ -125,35 +136,42 @@ document.addEventListener('DOMContentLoaded', () => {
      * @param {boolean} isFinal - True if the transcript is for the end of a turn.
      */
     function updateTranscript(text, isFinal) {
-        // If there's no active message div, create one for the new turn.
         if (!lastUserMessageDiv) {
-            lastUserMessageDiv = document.createElement('div');
-            lastUserMessageDiv.classList.add('message', 'user-message');
-            
-            const strong = document.createElement('strong');
-            strong.textContent = 'You: ';
-            
-            const span = document.createElement('span');
-            
-            lastUserMessageDiv.appendChild(strong);
-            lastUserMessageDiv.appendChild(span);
-            conversationDiv.appendChild(lastUserMessageDiv);
+            lastUserMessageDiv = createMessageDiv('user-message', 'You: ');
         }
-
-        // Update the text content of the current turn's message.
         lastUserMessageDiv.querySelector('span').textContent = text;
-
-        // If this is the final transcript for the turn, reset for the next one.
         if (isFinal) {
             lastUserMessageDiv.classList.add('final');
+            lastUserMessageDiv = null;
         }
-        else {
-            if (lastUserMessageDiv.classList.contains('final')) {
-                lastUserMessageDiv = null;
-            }
-        }
-        
         conversationDiv.scrollTop = conversationDiv.scrollHeight;
+    }
+    
+    function updateAIResponse(chunk) {
+        if (!lastAIMessageDiv) {
+            lastAIMessageDiv = createMessageDiv('ai-message', 'AI: ');
+        }
+        lastAIMessageDiv.querySelector('span').textContent += chunk;
+        conversationDiv.scrollTop = conversationDiv.scrollHeight;
+    }
+
+    function finalizeAIResponse() {
+        if (lastAIMessageDiv) {
+            lastAIMessageDiv.classList.add('final');
+            lastAIMessageDiv = null; // Reset for the next AI response
+        }
+    }
+
+    function createMessageDiv(className, sender) {
+        const messageDiv = document.createElement('div');
+        messageDiv.classList.add('message', className);
+        const strong = document.createElement('strong');
+        strong.textContent = sender;
+        const span = document.createElement('span');
+        messageDiv.appendChild(strong);
+        messageDiv.appendChild(span);
+        conversationDiv.appendChild(messageDiv);
+        return messageDiv;
     }
 
     // --- EVENT LISTENERS ---

@@ -1,5 +1,6 @@
 import os
 import logging
+from urllib import response
 from fastapi import FastAPI,Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.templating import Jinja2Templates
@@ -16,13 +17,21 @@ from assemblyai.streaming.v3 import (
     TerminationEvent,
     StreamingError,
 )
+import google.generativeai as genai
 import asyncio
+
 
 load_dotenv()
 ASSEMBLYAI_API_KEY = os.getenv("ASSEMBLYAI_API_KEY")
 if not ASSEMBLYAI_API_KEY:
     raise RuntimeError("ASSEMBLYAI_API_KEY not found in .env file.")
 aai.settings.api_key = ASSEMBLYAI_API_KEY
+
+
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+if not GEMINI_API_KEY:
+    raise RuntimeError("GEMINI_API_KEY not found in .env file.")
+genai.configure(api_key=GEMINI_API_KEY)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
@@ -42,6 +51,15 @@ async def favicon():
 
 # --- WebSocket Endpoint ---
 
+                        # ---- LLM logic ---
+async def llm_response(text: str):
+    logging.info(f"LLM Simulation received text: '{text}")
+    response = f"You said '{text}. That's interesting! I am now streaming a response back to you chunk by chunk."
+    chunks = response.split()
+    for chunk  in chunks:
+        yield chunk + ""
+        await asyncio.sleep(0.1)
+
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
@@ -49,25 +67,61 @@ async def websocket_endpoint(websocket: WebSocket):
     
     # Get the current event loop to schedule tasks from another thread
     loop = asyncio.get_running_loop()
-
+    llm_response_task = False
+    # --- asynchronous function to handle llm streaming
+    async def handle_llm_streaming(transcript: str):
+        nonlocal llm_response_task
+        logging.info(f"--- Starting LLM streaming")
+        try:
+            model = genai.GenerativeModel(
+            'gemini-1.5-flash-latest',
+            system_instruction="You are a helpful voice assistant. Keep your responses concise and conversational."
+            )
+            response_stream = await model.generate_content_async(transcript, stream=True)
+            response = ""
+             
+            async for chunk in response_stream:
+                if hasattr(chunk, 'text') and chunk.text:
+                    text = chunk.text
+                    response += text
+                    print(text, end = "", flush=True)
+                    await websocket.send_json({
+                        "type": "llm_response",
+                        "chunk": text
+                    })
+            print("\n")
+            await websocket.send_json({
+                "type": "llm_response_end"
+            })
+            logging.info(f"--- LLM Stream Complete. Full Response: '{response.strip()}' ---")
+        except Exception as e:
+            logging.error(f"Error during LLM streaming: {e}")
+        finally: 
+            llm_response_task = False
+        
     # Define synchronous callbacks, not async ones
     def on_begin(client: StreamingClient, event: BeginEvent):
         logging.info(f"AssemblyAI Session started: {event.id}")
 
     def on_turn(client: StreamingClient, event: TurnEvent):
+        nonlocal llm_response_task
         transcript = event.transcript
         is_final = event.end_of_turn
         logging.info(f"Transcript: {transcript} (End of turn: {is_final})")
         
         if transcript:
             # Create a coroutine to send the JSON data
-            coro = websocket.send_json({
-                "type": "transcript",
-                "transcript": transcript,
-                "is_final": is_final
-            })
+            asyncio.run_coroutine_threadsafe(
+                websocket.send_json({
+                    "type": "transcript",
+                    "transcript": transcript,
+                    "is_final": is_final
+                }), loop
+            )
+            if is_final and not llm_response_task:
+                llm_response_task = True
             # Schedule the coroutine on the main event loop from the current thread
-            asyncio.run_coroutine_threadsafe(coro, loop)
+                asyncio.run_coroutine_threadsafe(handle_llm_streaming(transcript), loop)
 
     def on_terminated(client: StreamingClient, event: TerminationEvent):
         logging.info(f"Session terminated after {event.audio_duration_seconds} seconds")
@@ -92,6 +146,7 @@ async def websocket_endpoint(websocket: WebSocket):
         StreamingParameters(
             sample_rate=16000, 
             format_turns=True,
+            end_of_turn_silence_ms=1200,
         )
     )
     
