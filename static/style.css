@@ -126,7 +126,7 @@
         #recordButton.recording {
             background-color: #d73a49;
             box-shadow: 0 0 25px rgba(215, 58, 73, 0.6);
-            animation: pulse-recording 1.5s infinite;
+            animation: pulse 1s infinite;
         }
         #recordButton:disabled {
             background-color: #555;

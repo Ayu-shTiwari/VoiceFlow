@@ -63,6 +63,7 @@ async def websocket_endpoint(websocket: WebSocket):
             async for response in audio_generator:
                 if response.get("type") == "audio_chunk":
                     audio_chunk_count += 1
+                    send_websocket_message("audio", audio_chunk=response["audio_base64"])
                     all_audio_data.append(base64.b64decode(response["audio_base64"]))
             
             logger.info(f"Received a total of {audio_chunk_count} audio chunks from Murf.")
@@ -83,8 +84,7 @@ async def websocket_endpoint(websocket: WebSocket):
             # Reset the lock to allow the next turn
             llm_task = None
 
-    # MODIFIED: This new function safely handles the AssemblyAI events.
-    # It runs in the AssemblyAI thread and contains the critical lock check.
+   
     def handle_assemblyai_turn(transcript: str, is_final: bool):
         nonlocal llm_task
         if not transcript:
@@ -110,6 +110,12 @@ async def websocket_endpoint(websocket: WebSocket):
         
         while True:
             data = await websocket.receive()
+            if data.get("type") == "interrupt":
+                logger.info("Received interrupt signal from client.")
+                if llm_task and not llm_task.done():
+                    llm_task.cancel() # Cancel the server-side pipeline
+                await murf_service.clear_context() # Tell Murf to stop TTS
+                continue
             if "bytes" in data:
                 await assembly_service.stream_audio(data["bytes"])
 

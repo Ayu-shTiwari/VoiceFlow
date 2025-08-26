@@ -47,7 +47,7 @@ class MurfWebSocketService:
             }
             await self.websocket.send(json.dumps(voice_config_msg))
             async with self._recv_lock:
-                await asyncio.wait_for(self.websocket.recv(), timeout=5.0)
+                await asyncio.wait_for(self.websocket.recv(), timeout=2.0)
         except asyncio.TimeoutError:
             logger.warning("Timeout waiting for Murf voice config acknowledgment.")
         except Exception as e:
@@ -59,6 +59,17 @@ class MurfWebSocketService:
             await self.websocket.close()
             self.is_connected = False
             logger.info("Disconnected from Murf WebSocket")
+
+    async def clear_context(self):
+        """Sends a message to Murf to stop any ongoing TTS generation."""
+        if not self.is_connected:
+            return
+        try:
+            clear_msg = {"context_id": self.static_context_id, "clear": True}
+            await self.websocket.send(json.dumps(clear_msg))
+            logger.info("Sent clear context request to Murf.")
+        except Exception as e:
+            logger.error(f"Error sending clear_context to Murf: {e}")
 
     async def stream_text_to_audio(self, text_stream):
         """Sends all text chunks first, then listens for the audio response."""
@@ -86,7 +97,7 @@ class MurfWebSocketService:
         while True:
             try:
                 async with self._recv_lock:
-                    response = await asyncio.wait_for(self.websocket.recv(), timeout=5.0)
+                    response = await asyncio.wait_for(self.websocket.recv(), timeout=2.0)
                 data = json.loads(response)
                 if "audio" in data:
                     chunk_counter+=1
