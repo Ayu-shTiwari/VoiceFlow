@@ -1,168 +1,126 @@
+# app.py
 import os
 import logging
-from urllib import response
-from fastapi import FastAPI,Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse, HTMLResponse
+import base64
+from datetime import datetime
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
+from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
-import assemblyai as aai
-from assemblyai.streaming.v3 import (
-    StreamingClient,
-    StreamingClientOptions,
-    StreamingEvents,
-    StreamingParameters,
-    BeginEvent,
-    TurnEvent,
-    TerminationEvent,
-    StreamingError,
-)
-import google.generativeai as genai
 import asyncio
 
+# Import the refactored services
+from services.murf_service import MurfWebSocketService
+from services.streaming_llm import LLMService
+from services.assembly_service import AssemblyAIService
 
+# --- Setup ---
 load_dotenv()
-ASSEMBLYAI_API_KEY = os.getenv("ASSEMBLYAI_API_KEY")
-if not ASSEMBLYAI_API_KEY:
-    raise RuntimeError("ASSEMBLYAI_API_KEY not found in .env file.")
-aai.settings.api_key = ASSEMBLYAI_API_KEY
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
-
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-if not GEMINI_API_KEY:
-    raise RuntimeError("GEMINI_API_KEY not found in .env file.")
-genai.configure(api_key=GEMINI_API_KEY)
-
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
-
-# FastAPI setup
 app = FastAPI()
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
+# --- FastAPI Routes ---
 @app.get("/", response_class=HTMLResponse)
 async def read_root(request: Request):
-    """Serves the main HTML page."""
     return templates.TemplateResponse("index.html", {"request": request})
 
-@app.get("/favicon.ico", include_in_schema=False)
-async def favicon():
-    return FileResponse("static/favicon.ico")
-
 # --- WebSocket Endpoint ---
-
-                        # ---- LLM logic ---
-async def llm_response(text: str):
-    logging.info(f"LLM Simulation received text: '{text}")
-    response = f"You said '{text}. That's interesting! I am now streaming a response back to you chunk by chunk."
-    chunks = response.split()
-    for chunk  in chunks:
-        yield chunk + ""
-        await asyncio.sleep(0.1)
-
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
-    logging.info("🎤 Client connected via WebSocket")
+    logger.info("🎤 Client connected via WebSocket")
     
-    # Get the current event loop to schedule tasks from another thread
     loop = asyncio.get_running_loop()
-    llm_response_task = False
-    # --- asynchronous function to handle llm streaming
-    async def handle_llm_streaming(transcript: str):
-        nonlocal llm_response_task
-        logging.info(f"--- Starting LLM streaming")
+    llm_task = None
+
+    # --- Service Initialization ---
+    murf_service = MurfWebSocketService()
+    llm_service = LLMService()
+
+    def send_websocket_message(message_type, **kwargs):
+        if websocket.client_state.name == 'CONNECTED':
+            asyncio.run_coroutine_threadsafe(websocket.send_json({"type": message_type, **kwargs}), loop)
+
+    async def llm_and_murf_pipeline(transcript: str):
+        nonlocal llm_task
         try:
-            model = genai.GenerativeModel(
-            'gemini-1.5-flash-latest',
-            system_instruction="You are a helpful voice assistant. Keep your responses concise and conversational."
-            )
-            response_stream = await model.generate_content_async(transcript, stream=True)
-            response = ""
-             
-            async for chunk in response_stream:
-                if hasattr(chunk, 'text') and chunk.text:
-                    text = chunk.text
-                    response += text
-                    print(text, end = "", flush=True)
-                    await websocket.send_json({
-                        "type": "llm_response",
-                        "chunk": text
-                    })
-            print("\n")
-            await websocket.send_json({
-                "type": "llm_response_end"
-            })
-            logging.info(f"--- LLM Stream Complete. Full Response: '{response.strip()}' ---")
+            llm_stream = llm_service.get_response_stream(transcript)
+            
+            async def tts_chunk_generator():
+                async for chunk_data in llm_stream:
+                    send_websocket_message("llm_response", chunk=chunk_data["ui_chunk"])
+                    yield chunk_data["tts_chunk"]
+            
+            audio_generator = murf_service.stream_text_to_audio(tts_chunk_generator())
+            
+            all_audio_data = []
+            audio_chunk_count = 0
+            async for response in audio_generator:
+                if response.get("type") == "audio_chunk":
+                    audio_chunk_count += 1
+                    all_audio_data.append(base64.b64decode(response["audio_base64"]))
+            
+            logger.info(f"Received a total of {audio_chunk_count} audio chunks from Murf.")
+            if all_audio_data:
+                output_dir = os.path.join("media", "murf_responses")
+                os.makedirs(output_dir, exist_ok=True)
+                output_filename = f"llm_response_{datetime.now().strftime('%Y%m%d_%H%M%S')}.wav"
+                output_path = os.path.join(output_dir, output_filename)
+                with open(output_path, "wb") as audio_file:
+                    audio_file.write(b"".join(all_audio_data))
+                logger.info(f"✅ Successfully saved Murf audio to {output_path}")
+
+            send_websocket_message("llm_response_end")
+
         except Exception as e:
-            logging.error(f"Error during LLM streaming: {e}")
-        finally: 
-            llm_response_task = False
-        
-    # Define synchronous callbacks, not async ones
-    def on_begin(client: StreamingClient, event: BeginEvent):
-        logging.info(f"AssemblyAI Session started: {event.id}")
+            logger.error(f"Error in LLM/Murf pipeline: {e}")
+        finally:
+            # Reset the lock to allow the next turn
+            llm_task = None
 
-    def on_turn(client: StreamingClient, event: TurnEvent):
-        nonlocal llm_response_task
-        transcript = event.transcript
-        is_final = event.end_of_turn
-        logging.info(f"Transcript: {transcript} (End of turn: {is_final})")
+    # MODIFIED: This new function safely handles the AssemblyAI events.
+    # It runs in the AssemblyAI thread and contains the critical lock check.
+    def handle_assemblyai_turn(transcript: str, is_final: bool):
+        nonlocal llm_task
+        if not transcript:
+            return
+
+        send_websocket_message("transcript", transcript=transcript, is_final=is_final)
         
-        if transcript:
-            # Create a coroutine to send the JSON data
-            asyncio.run_coroutine_threadsafe(
-                websocket.send_json({
-                    "type": "transcript",
-                    "transcript": transcript,
-                    "is_final": is_final
-                }), loop
+        # CRITICAL FIX: Check the lock *before* scheduling the async task.
+        # This prevents the race condition.
+        if is_final and not llm_task:
+            llm_task = asyncio.run_coroutine_threadsafe(
+                llm_and_murf_pipeline(transcript), loop
             )
-            if is_final and not llm_response_task:
-                llm_response_task = True
-            # Schedule the coroutine on the main event loop from the current thread
-                asyncio.run_coroutine_threadsafe(handle_llm_streaming(transcript), loop)
 
-    def on_terminated(client: StreamingClient, event: TerminationEvent):
-        logging.info(f"Session terminated after {event.audio_duration_seconds} seconds")
+    # Pass the new handler function to the service
+    assembly_service = AssemblyAIService(on_turn_callback=handle_assemblyai_turn)
 
-    def on_error(client: StreamingClient, error: StreamingError):
-        logging.error(f"AssemblyAI streaming error: {error}")
-
-    # Initialize the AssemblyAI streaming client
-    client = StreamingClient(
-        StreamingClientOptions(api_key=aai.settings.api_key)
-    )
-    
-    # Register the synchronous event handlers
-    client.on(StreamingEvents.Begin, on_begin)
-    client.on(StreamingEvents.Turn, on_turn)
-    client.on(StreamingEvents.Termination, on_terminated)
-    client.on(StreamingEvents.Error, on_error)
-    
-    # Connect to the streaming service in a separate thread
-    await asyncio.to_thread(
-        client.connect,
-        StreamingParameters(
-            sample_rate=16000, 
-            format_turns=True,
-            end_of_turn_silence_ms=1200,
-        )
-    )
-    
     try:
-        # Main loop to receive audio data from the client
+        await asyncio.gather(
+            assembly_service.connect(),
+            murf_service.connect()
+        )
+        
         while True:
             data = await websocket.receive()
             if "bytes" in data:
-                # Stream audio bytes to AssemblyAI in a separate thread
-                await asyncio.to_thread(client.stream, data["bytes"])
-            elif "text" in data and data["text"] == "END":
-                logging.info("END message received. Closing connection.")
-                await asyncio.to_thread(client.disconnect)
-                break
+                await assembly_service.stream_audio(data["bytes"])
+
     except WebSocketDisconnect:
-        logging.info("Client disconnected")
+        logger.info("Client disconnected")
     finally:
-        # Ensure the client is disconnected on exit
-        await asyncio.to_thread(client.disconnect)
+        # Graceful cleanup
+        if llm_task and not llm_task.done():
+            llm_task.cancel()
+        await asyncio.gather(
+            assembly_service.disconnect(),
+            murf_service.disconnect()
+        )
+        logger.info("Cleanup complete.")

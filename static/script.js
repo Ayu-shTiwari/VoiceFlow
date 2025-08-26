@@ -1,183 +1,236 @@
 document.addEventListener('DOMContentLoaded', () => {
     // --- UI ELEMENTS ---
-    const startRecordButton = document.getElementById('startRecord');
-    const stopRecordButton = document.getElementById('stopRecord');
-    const conversationDiv = document.getElementById('conversation');
+    const recordButton = document.getElementById('recordButton');
+    const newChatButton = document.getElementById('newChatButton');
+    const responseStatus = document.getElementById('response-status');
+    const conversationDiv = document.getElementById('conversationDiv');
+    const responseLoader = document.getElementById('response-loader');
 
-    // --- STATE VARIABLES for Web Audio API ---
+    // --- STATE & AUDIO VARIABLES ---
     let socket;
+    let sessionId = null;
+    let isRecording = false;
+
+    // For recording
     let audioContext;
     let processor;
     let source;
     let stream;
-    let lastUserMessageDiv = null; // To update the transcript in place for a single turn
-    let lastAiMessageDiv = null; // To update the AI response in place for a single turn
-    // --- CORE FUNCTIONS ---
 
-    /**
-     * Converts a Float32Array of audio data to a 16-bit PCM ArrayBuffer.
-     * This is the format required by the AssemblyAI streaming API.
-     * @param {Float32Array} float32Array - The raw audio data from the microphone.
-     * @returns {ArrayBuffer} The audio data in 16-bit PCM format.
-     */
+    // For playback
+    let playbackAudioContext;
+    let audioQueue = [];
+    let isPlaying = false;
+    let lastUserMessageDiv = null;
+
+    // --- UI MANAGEMENT ---
+    const updateUIState = (state, message = '') => {
+        recordButton.disabled = state === 'thinking' || state === 'playing';
+        responseLoader.style.display = state === 'thinking' ? 'block' : 'none';
+
+        if (state === 'recording') {
+            recordButton.classList.add('recording');
+            recordButton.innerHTML = '<i class="fas fa-stop"></i>';
+            responseStatus.textContent = 'Listening...';
+        } else {
+            recordButton.classList.remove('recording');
+            recordButton.innerHTML = '<i class="fas fa-microphone"></i>';
+        }
+
+        if (message) {
+            responseStatus.textContent = message;
+        } else if (state === 'ready') {
+            responseStatus.textContent = 'Click the button to speak.';
+        } else if (state === 'playing') {
+            responseStatus.textContent = 'Playing response...';
+        }
+    };
+
+    const displayMessage = (role, text) => {
+        if (!text) return;
+        if (role === 'user') {
+            if (!lastUserMessageDiv) {
+                lastUserMessageDiv = document.createElement('div');
+                lastUserMessageDiv.classList.add('message', 'user-message');
+                const strong = document.createElement('strong');
+                strong.textContent = 'You: ';
+                const span = document.createElement('span');
+                lastUserMessageDiv.appendChild(strong);
+                lastUserMessageDiv.appendChild(span);
+                conversationDiv.appendChild(lastUserMessageDiv);
+            }
+            lastUserMessageDiv.querySelector('span').textContent = text;
+        } else {
+            // For assistant, create a new message div each time
+            lastUserMessageDiv = null; // Finalize user message
+            const messageElement = document.createElement('div');
+            messageElement.classList.add('message', 'assistant-message');
+            const strong = document.createElement('strong');
+            strong.textContent = 'Assistant: ';
+            const span = document.createElement('span');
+            span.textContent = text; // For now, we display the full text at once
+            messageElement.appendChild(strong);
+            messageElement.appendChild(span);
+            conversationDiv.appendChild(messageElement);
+        }
+        conversationDiv.scrollTop = conversationDiv.scrollHeight;
+    };
+
+    // --- REAL-TIME RECORDING ---
+    const startRecording = async () => {
+        try {
+            stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            isRecording = true;
+            updateUIState('recording');
+
+            audioContext = new AudioContext({ sampleRate: 16000 });
+            source = audioContext.createMediaStreamSource(stream);
+            processor = audioContext.createScriptProcessor(4096, 1, 1);
+
+            source.connect(processor);
+            processor.connect(audioContext.destination);
+
+            processor.onaudioprocess = (event) => {
+                if (!socket || socket.readyState !== WebSocket.OPEN) return;
+                const inputData = event.inputBuffer.getChannelData(0);
+                const pcm16 = floatTo16BitPCM(inputData);
+                socket.send(pcm16); // Send raw audio chunks
+            };
+        } catch (error) {
+            console.error("Microphone access error:", error);
+            updateUIState('error', 'Microphone access denied.');
+        }
+    };
+
+    const stopRecording = () => {
+        isRecording = false;
+        updateUIState('ready');
+
+        if (processor) processor.disconnect();
+        if (source) source.disconnect();
+        if (stream) stream.getTracks().forEach(track => track.stop());
+        if (audioContext) audioContext.close();
+
+        if (socket && socket.readyState === WebSocket.OPEN) {
+            socket.send(JSON.stringify({ "text": "END" }));
+        }
+    };
+
     function floatTo16BitPCM(float32Array) {
         const buffer = new ArrayBuffer(float32Array.length * 2);
         const view = new DataView(buffer);
-        let offset = 0;
-        for (let i = 0; i < float32Array.length; i++, offset += 2) {
+        for (let i = 0; i < float32Array.length; i++) {
             let s = Math.max(-1, Math.min(1, float32Array[i]));
-            view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+            view.setInt16(i * 2, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
         }
         return buffer;
     }
 
-    /**
-     * Starts the recording process using the Web Audio API.
-     */
-    async function startRecording() {
-        try {
-            // 1. Get user's microphone stream
-            stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-
-            // 2. Create and configure the AudioContext and ScriptProcessorNode
-            audioContext = new AudioContext({ sampleRate: 16000 }); // Must be 16kHz
-            source = audioContext.createMediaStreamSource(stream);
-            processor = audioContext.createScriptProcessor(4096, 1, 1); // Buffer size, input channels, output channels
-
-            // 3. Connect the audio nodes
-            source.connect(processor);
-            processor.connect(audioContext.destination);
-
-            // 4. Set up the audio processing event handler
-            processor.onaudioprocess = (event) => {
-                if (!socket || socket.readyState !== WebSocket.OPEN) return;
-                
-                const inputData = event.inputBuffer.getChannelData(0);
-                const pcm16 = floatTo16BitPCM(inputData);
-                socket.send(pcm16);
-            };
-
-            // Update UI
-            startRecordButton.disabled = true;
-            stopRecordButton.disabled = false;
-            lastUserMessageDiv = null;
-            lastAiMessageDiv = null;
-
-        } catch (err) {
-            console.error("Microphone access denied:", err);
-            alert("Microphone access denied. Please check your settings.");
+    // --- SESSION & WEBSOCKET ---
+    const initializeSession = () => {
+        const urlParams = new URLSearchParams(window.location.search);
+        sessionId = urlParams.get('session_id');
+        if (!sessionId) {
+            sessionId = crypto.randomUUID();
+            const newUrl = `${window.location.pathname}?session_id=${sessionId}`;
+            window.history.pushState({ path: newUrl }, '', newUrl);
         }
-    }
+        connectWebSocket();
+    };
 
-    /**
-     * Stops the recording and cleans up all Web Audio API resources.
-     */
-    function stopRecording() {
-        if (processor) {
-            processor.disconnect();
-            processor.onaudioprocess = null;
-        }
-        if (source) source.disconnect();
-        if (stream) {
-            stream.getTracks().forEach(track => track.stop());
-        }
-        if (audioContext) audioContext.close();
-
-        if (socket && socket.readyState === WebSocket.OPEN) {
-            socket.send("END"); // Notify server that recording has ended
-        }
-
-        startRecordButton.disabled = false;
-        stopRecordButton.disabled = true;
-    }
-
-    /**
-     * Establishes the WebSocket connection and sets up its event handlers.
-     */
-    function connectWebSocket() {
-        if (socket && socket.readyState !== WebSocket.CLOSED) {
-            socket.close();
-        }
-
-        socket = new WebSocket('ws://127.0.0.1:8000/ws');
+    const connectWebSocket = () => {
+        const wsUrl = `ws://${window.location.host}/ws`;
+        socket = new WebSocket(wsUrl);
 
         socket.onopen = () => {
-            console.log("WebSocket connection established. Ready to record.");
-            startRecordButton.disabled = false;
-        };
-
-        socket.onclose = () => {
-            console.log("WebSocket connection closed.");
-            stopRecording();
-        };
-
-        socket.onerror = (error) => {
-            console.error("WebSocket Error: ", error);
-            alert("There was an error with the WebSocket connection.");
+            console.log("WebSocket connected.");
+            socket.send(JSON.stringify({ session_id: sessionId }));
+            updateUIState('ready');
         };
 
         socket.onmessage = (event) => {
-            const data = JSON.parse(event.data);
-            if (data.type === 'transcript') {
-                updateTranscript(data.transcript, data.is_final);
-            }
-            if (data.type === 'llm_response') {
-                updateAIResponse(data.chunk);
-            }
-            if (data.type === 'llm_response_end') {
-                finalizeAIResponse();
+            const result = JSON.parse(event.data);
+
+            if (result.type === 'transcript') {
+                displayMessage('user', result.transcript);
+                if (result.is_final) {
+                    updateUIState('thinking');
+                }
+            } else if (result.type === 'assistant') {
+                // Display the single final assistant response
+                const full = result.full_response;
+                displayMessage('assistant', full);
+            } else if (result.type === 'llm_response') {
+                // This message type is no longer used; ignore if received
+            } else if (result.type === 'audio') {
+                const audioChunk = base64ToArrayBuffer(result.audio_chunk);
+                audioQueue.push(audioChunk);
+                if (!isPlaying) {
+                    playAudioQueue();
+                }
+            } else if (result.type === 'pipeline_end') {
+                // When the full response is done, update UI and ensure final text is shown
+                if (result.full_response) {
+                    displayMessage('assistant', result.full_response);
+                }
+                updateUIState('ready');
             }
         };
+
+        socket.onclose = () => {
+            updateUIState('error', 'Connection lost. Reconnecting...');
+            setTimeout(initializeSession, 3000);
+        };
+    };
+
+    // --- AUDIO PLAYBACK ---
+    async function playAudioQueue() {
+        if (audioQueue.length === 0) {
+            isPlaying = false;
+            // Check if the AI is done speaking
+            if(responseLoader.style.display === 'none') {
+                 updateUIState('ready');
+            }
+            return;
+        }
+        isPlaying = true;
+        updateUIState('playing');
+
+        if (!playbackAudioContext || playbackAudioContext.state === 'closed') {
+            playbackAudioContext = new AudioContext({ sampleRate: 44100 });
+        }
+
+        const audioData = audioQueue.shift();
+        const audioBuffer = await playbackAudioContext.decodeAudioData(audioData);
+        const sourceNode = playbackAudioContext.createBufferSource();
+        sourceNode.buffer = audioBuffer;
+        sourceNode.connect(playbackAudioContext.destination);
+        sourceNode.onended = playAudioQueue;
+        sourceNode.start();
     }
 
-    /**
-     * Updates the conversation UI with partial or final transcripts.
-     * @param {string} text - The transcribed text.
-     * @param {boolean} isFinal - True if the transcript is for the end of a turn.
-     */
-    function updateTranscript(text, isFinal) {
-        if (!lastUserMessageDiv) {
-            lastUserMessageDiv = createMessageDiv('user-message', 'You: ');
+    function base64ToArrayBuffer(base64) {
+        const binaryString = window.atob(base64);
+        const len = binaryString.length;
+        const bytes = new Uint8Array(len);
+        for (let i = 0; i < len; i++) {
+            bytes[i] = binaryString.charCodeAt(i);
         }
-        lastUserMessageDiv.querySelector('span').textContent = text;
-        if (isFinal) {
-            lastUserMessageDiv.classList.add('final');
-            lastUserMessageDiv = null;
-        }
-        conversationDiv.scrollTop = conversationDiv.scrollHeight;
-    }
-    
-    function updateAIResponse(chunk) {
-        if (!lastAIMessageDiv) {
-            lastAIMessageDiv = createMessageDiv('ai-message', 'AI: ');
-        }
-        lastAIMessageDiv.querySelector('span').textContent += chunk;
-        conversationDiv.scrollTop = conversationDiv.scrollHeight;
-    }
-
-    function finalizeAIResponse() {
-        if (lastAIMessageDiv) {
-            lastAIMessageDiv.classList.add('final');
-            lastAIMessageDiv = null; // Reset for the next AI response
-        }
-    }
-
-    function createMessageDiv(className, sender) {
-        const messageDiv = document.createElement('div');
-        messageDiv.classList.add('message', className);
-        const strong = document.createElement('strong');
-        strong.textContent = sender;
-        const span = document.createElement('span');
-        messageDiv.appendChild(strong);
-        messageDiv.appendChild(span);
-        conversationDiv.appendChild(messageDiv);
-        return messageDiv;
+        return bytes.buffer;
     }
 
     // --- EVENT LISTENERS ---
-    startRecordButton.addEventListener('click', startRecording);
-    stopRecordButton.addEventListener('click', stopRecording);
+    recordButton.addEventListener('click', () => {
+        if (isRecording) {
+            stopRecording();
+        } else {
+            startRecording();
+        }
+    });
 
-    // --- INITIALIZATION ---
-    connectWebSocket();
+    newChatButton.addEventListener('click', () => {
+        window.location.href = window.location.pathname;
+    });
+
+    initializeSession();
 });

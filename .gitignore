@@ -20,11 +20,6 @@ ENV/
 *.log
 Daily journal.txt
 
-
-
-#just random screenshots
-ss/
-
 static/favicon.ico
 static/background.jpg
 
@@ -33,3 +28,5 @@ chat_history.json
 media
 
 output.webm
+
+temp_app.py
