@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 class MurfWebSocketService:
     """Handles the connection and TTS streaming with Murf AI."""
-    def __init__(self, voice_id: str = "en-US-amara"):
+    def __init__(self, voice_id: str = "en-US-ken"):
         self.api_key = os.getenv("MURF_API_KEY")
         if not self.api_key:
             raise ValueError("MURF_API_KEY environment variable not set.")
@@ -42,7 +42,7 @@ class MurfWebSocketService:
         """Sends the initial voice and context configuration."""
         try:
             voice_config_msg = {
-                "voice_config": {"voiceId": self.voice_id, "style": "Conversational"},
+                "voice_config": {"voiceId": self.voice_id, "pitch": -30},
                 "context_id": self.static_context_id
             }
             await self.websocket.send(json.dumps(voice_config_msg))
