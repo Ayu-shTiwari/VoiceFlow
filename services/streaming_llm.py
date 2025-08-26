@@ -2,6 +2,7 @@
 import os
 import google.generativeai as genai
 import logging
+from typing import List, Dict
 
 logger = logging.getLogger(__name__)
 
@@ -12,17 +13,24 @@ class LLMService:
         if not self.api_key:
             raise ValueError("GEMINI_API_KEY environment variable not set.")
         genai.configure(api_key=self.api_key)
+        
         self.model = genai.GenerativeModel(
             'gemini-1.5-flash-latest',
             system_instruction="You are a helpful voice assistant. Keep responses concise and use plain text. Do not use markdown."
         )
 
-    async def get_response_stream(self, transcript: str):
+    async def get_response_stream(self, session_history: List[Dict], transcript: str):
         """
         Gets a streaming response from the LLM and yields clean text chunks.
         """
         try:
-            response_stream = await self.model.generate_content_async(transcript, stream=True)
+            gemini_formatted_history = [
+                {'role': 'model' if msg['role'] == 'assistant' else 'user', 'parts': msg.get('parts', [])}
+                for msg in session_history
+            ]
+            chat = self.model.start_chat(history=gemini_formatted_history)
+            response_stream = await chat.send_message_async(transcript, stream=True)
+            
             full_response = ""
             async for chunk in response_stream:
                 if hasattr(chunk, 'text') and chunk.text:

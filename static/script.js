@@ -55,20 +55,25 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const displayMessage = (role, text) => {
         if (!text) return;
-        if (role === 'user') {
-            currentAssistantMessageSpan = null; 
-            if (!lastUserMessageDiv) {
-                lastUserMessageDiv = document.createElement('div');
-                lastUserMessageDiv.classList.add('message', 'user-message');
-                const strong = document.createElement('strong');
-                strong.textContent = 'You: ';
-                const span = document.createElement('span');
-                lastUserMessageDiv.appendChild(strong);
-                lastUserMessageDiv.appendChild(span);
-                conversationDiv.appendChild(lastUserMessageDiv);
-            }
-            lastUserMessageDiv.querySelector('span').textContent = text;
-        }
+        
+        // Create a new container for each message
+        const messageElement = document.createElement('div');
+        messageElement.classList.add('message', role === 'user' ? 'user-message' : 'assistant-message');
+        
+        // Create the 'You:' or 'Assistant:' label
+        const strong = document.createElement('strong');
+        strong.textContent = role === 'user' ? 'You: ' : 'Assistant: ';
+        
+        // Create the span for the actual text content
+        const span = document.createElement('span');
+        span.textContent = text;
+        
+        // Assemble and append the message to the conversation
+        messageElement.appendChild(strong);
+        messageElement.appendChild(span);
+        conversationDiv.appendChild(messageElement);
+        
+        // Auto-scroll to the bottom
         conversationDiv.scrollTop = conversationDiv.scrollHeight;
     };
 
@@ -157,6 +162,19 @@ document.addEventListener('DOMContentLoaded', () => {
 
         socket.onmessage = (event) => {
             const result = JSON.parse(event.data);
+
+            if (result.type === 'history') {
+                console.log("Received existing chat history.");
+                conversationDiv.innerHTML = ''; // Clear any existing messages
+                result.data.forEach(message => {
+                    // The history format is { role: 'user'/'assistant', parts: ['text'] }
+                    const role = message.role;
+                    const text = message.parts[0];
+                    displayMessage(role, text);
+                });
+                lastUserMessageDiv = null; // Reset for new messages
+                currentAssistantMessageSpan = null;
+            }
 
             if (result.type === 'transcript') {
                 if (result.is_final) {
@@ -378,7 +396,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     newChatButton.addEventListener('click', () => {
-        window.location.reload();
+        window.location.href = window.location.pathname; // Reload without session_id
     });
 
     initializeSession();
