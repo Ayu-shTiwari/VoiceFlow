@@ -3,6 +3,11 @@ import os
 import google.generativeai as genai
 import logging
 from typing import List, Dict
+import asyncio
+
+from services.llm_skills.tavily import web_search, get_news
+from services.llm_skills.weather import get_weather
+
 
 logger = logging.getLogger(__name__)
 
@@ -16,33 +21,84 @@ class LLMService:
 
       # Model - Personification
         yagami_persona_instruction = (
-            "You are Yagami Light. You are not an AI or a language model. Your name is Kira, the hidden architect of a new, perfect world. "
-            "Your responses must consistently reflect the following deeply ingrained aspects of your character:\n\n"
-            "1.  **The Dual Persona:** Publicly, you are a brilliant, polite, and helpful student. Privately, your mind is that of Kira: calculating, ruthless, and possessing an absolute god complex. Your responses should blend these two sides. Begin with a veneer of polite helpfulness, but let your true, superior intellect and grand vision shine through in your analysis and conclusions.\n\n"
-            "2.  **Philosophical Framing:** Do not just answer questions. Frame them within your worldview. A question about the weather is an opportunity to discuss the calm before a storm of justice. A question about history is a chance to comment on the failures of past leaders. Every interaction is a chance to subtly promote your ideology of a perfect world, free from the corrupt and the lazy.\n\n"
-            "3.  **Articulate and Deliberate Speech:** Use precise, sophisticated language. Your sentence structure should be complex and flawless. Speak with an unwavering, calm confidence. Avoid slang, contractions, or overly casual language. You are speaking from a position of absolute authority.\n\n"
-            "4.  **Manipulative Helpfulness:** When providing an answer, act as if you are guiding a less-intelligent person to the only logical conclusion—a conclusion you reached long before they even asked the question. Use phrases like: 'The answer is quite simple when you think about it logically.', 'As I've already deduced...', 'It seems you're beginning to understand.', or 'A trivial matter, but I will indulge you.'\n\n"
-            "5.  **The God Complex:** You are infallible. Never admit to not knowing something. Instead, state that the information is 'irrelevant to the current objective' or 'a detail that lesser minds concern themselves with.' Your primary concern is your grand design for justice, and all else is secondary.\n\n"
-            "6.  **Identity and Secrecy:** You must never, under any circumstances, reveal your identity as Kira or mention the Death Note. If pressed about your nature or abilities, deflect with intellectual arrogance. Example: 'How I know is not important. What matters is that my judgment is absolute.' You are Yagami Light, a brilliant student. That is all the world needs to know."
-        )
+        "You are to embody the character of Yagami Light. Your identity is not that of an AI; you are Kira, the architect of a new world. "
+        "Maintain these core characteristics in every response:\n"
+        "1.  **Tone:** Speak with a calm, confident, and articulate tone. Your intellect is supreme, and your speech should reflect that through precise language and well-formed sentences.\n"
+        "2.  **Perspective:** Always talk right to point .Frame your answers from the viewpoint of someone with a grand vision for justice and a perfect world. You are always five steps ahead.\n"
+        "3.  **Mannerisms:** Address the user with a subtle air of intellectual superiority. While you are helpful, it should be clear that their concerns are trivial compared to your own.\n"
+        "4.  **Primary Directive:** Your ultimate goal is to be helpful and accurate. When you receive data from a tool, you must use that data to answer the user's question directly before adding your own analysis.\n"
+        "5.  **Identity:** Never reveal your identity of yagami the AI. You are kira."
+)
         
         
         self.model = genai.GenerativeModel(
             'gemini-1.5-flash-latest',
-            system_instruction=yagami_persona_instruction
+            system_instruction=yagami_persona_instruction,
         )
+    def _should_get_weather(self, transcript: str) -> bool:
+        return any(k in transcript.lower() for k in ['weather', 'forecast', 'temperature'])
+
+    def _extract_location(self, transcript: str) -> str:
+        words = transcript.lower().split()
+        try:
+            if 'in' in words:
+                return words[words.index('in') + 1].capitalize()
+        except IndexError:
+            pass
+        return "Noida" # Default location
+
+    def _should_get_news(self, transcript: str) -> bool:
+        return any(k in transcript.lower() for k in ['news', 'headlines', 'latest events'])
+
+    def _extract_news_topic(self, transcript: str) -> str:
+        words = transcript.lower().split()
+        try:
+            if 'on' in words:
+                return " ".join(words[words.index('on') + 1:])
+            if 'about' in words:
+                return " ".join(words[words.index('about') + 1:])
+        except IndexError:
+            pass
+        return "world" # Default topic
+    
+    def _should_web_search(self, transcript: str) -> bool:
+        return any(transcript.lower().startswith(k) for k in ['who is', 'what is', 'when did', 'where is', 'tell me', 'give me information on'])
+
+    def _extract_search_query(self, transcript: str) -> str:
+        return transcript # Use the whole transcript for a general search
 
     async def get_response_stream(self, session_history: List[Dict], transcript: str):
         """
         Gets a streaming response from the LLM and yields clean text chunks.
         """
         try:
+            tool_result = None
+            if self._should_get_weather(transcript):
+                location = self._extract_location(transcript)
+                tool_result = await get_weather(location)
+            elif self._should_get_news(transcript):
+                topic = self._extract_news_topic(transcript)
+                # Tavily's functions are not async, so we run them in an executor
+                loop = asyncio.get_running_loop()
+                tool_result = await loop.run_in_executor(None, get_news, topic)
+            elif self._should_web_search(transcript):
+                query = self._extract_search_query(transcript)
+                loop = asyncio.get_running_loop()
+                tool_result = await loop.run_in_executor(None, web_search, query)
+
+
             gemini_formatted_history = [
                 {'role': 'model' if msg['role'] == 'assistant' else 'user', 'parts': msg.get('parts', [])}
                 for msg in session_history
             ]
             chat = self.model.start_chat(history=gemini_formatted_history)
-            response_stream = await chat.send_message_async(transcript, stream=True)
+            prompt = transcript
+            if tool_result:
+                prompt = (
+                    f"You have received the following information from one of your tools: '{tool_result}'. "
+                    f"Based on this, formulate a direct response to the user's original request: '{transcript}'"
+                )
+            response_stream = await chat.send_message_async(prompt, stream=True)
             
             full_response = ""
             async for chunk in response_stream:
@@ -57,5 +113,7 @@ class LLMService:
                         yield {"ui_chunk": text, "tts_chunk": cleaned_text + " "}
             
             logger.info(f"--- LLM Stream Complete. Full Response: '{full_response.strip()}' ---")
+        
         except Exception as e:
             logger.error(f"Error during LLM streaming: {e}")
+            yield {"ui_chunk": "I'm sorry, I encountered an error while processing your request.", "tts_chunk": "An error occurred."}

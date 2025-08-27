@@ -28,7 +28,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let passiveStream;
     let analyser;
     let passiveMonitoringId;
-    const BARGE_IN_THRESHOLD = 20;
+    const BARGE_IN_THRESHOLD = 40;
 
     // --- UI MANAGEMENT ---
     const updateUIState = (state, message = '') => {

@@ -44,7 +44,7 @@ class AssemblyAIService:
             StreamingParameters(
                 sample_rate=16000,
                 format_turns=True,
-                end_of_turn_silence_ms=1200
+                end_of_turn_silence_ms=800
             )
         )
 
