@@ -20,8 +20,7 @@ ENV/
 *.log
 Daily journal.txt
 
-static/favicon.ico
-static/background.jpg
+
 
 chat_history.json
 
