@@ -383,8 +383,8 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- SESSION & WEBSOCKET ---
     const connectWebSocket = () => {
         if (!keysValidated || (socket && socket.readyState === WebSocket.OPEN)) return;
-
-        const wsUrl = `ws://${window.location.host}/ws`;
+        const wsProtocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
+        const wsUrl = `${wsProtocol}://${window.location.host}/ws`;
         socket = new WebSocket(wsUrl);
 
         socket.onopen = () => {
