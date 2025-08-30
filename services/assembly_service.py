@@ -11,12 +11,11 @@ logger = logging.getLogger(__name__)
 class AssemblyAIService:
     """Handles real-time transcription using AssemblyAI."""
     # MODIFIED: The service now takes a single, unified callback.
-    def __init__(self, on_turn_callback):
-        self.api_key = os.getenv("ASSEMBLYAI_API_KEY")
-        if not self.api_key:
+    def __init__(self, api_key: str, on_turn_callback):
+        if not api_key:
             raise ValueError("ASSEMBLYAI_API_KEY environment variable not set.")
+        self.api_key = api_key
         aai.settings.api_key = self.api_key
-        
         self.on_turn_callback = on_turn_callback
         self.client = None
 

@@ -2,11 +2,10 @@
 import os
 import json
 import logging
-import base64
-from datetime import datetime
+import uvicorn
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import HTMLResponse, FileResponse
+from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
@@ -16,6 +15,8 @@ import asyncio
 from services.murf_service import MurfWebSocketService
 from services.streaming_llm import LLMService
 from services.assembly_service import AssemblyAIService
+from services.config_service import load_keys_from_file, save_keys_to_file, validate_keys
+from schemas.chat_schemas import ApiKeys
 
 # --- Setup ---
 load_dotenv()
@@ -23,6 +24,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(level
 logger = logging.getLogger(__name__)
 
 HISTORY_FILE = "chat_history.json"
+KEYS_FILE = "api_keys.json"
 chat_histories = {}
 history_lock = asyncio.Lock()
 
@@ -36,7 +38,6 @@ def load_history():
                     chat_histories = json.load(f)
                     logger.info("✅ Chat history loaded successfully.")
                 else:
-                    logger.warning("⚠️ History file is empty. Starting fresh.")
                     chat_histories = {}
         except (json.JSONDecodeError, IOError) as e:
             logger.error(f"❌ Error loading history file: {e}. Starting fresh.")
@@ -50,7 +51,7 @@ async def save_history():
     async with history_lock:
         with open(HISTORY_FILE, "w") as f:
             json.dump(chat_histories, f, indent=4)
-    logger.info("Chat history saved to file.")
+    logger.info("Session history saved.")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -60,6 +61,8 @@ async def lifespan(app: FastAPI):
     yield
     logger.info("Server is shutting down. Saving history...")
     await save_history()
+    with open(KEYS_FILE, "w") as f: json.dump({}, f)
+    chat_histories.clear()
     logger.info("Final history save complete.")
     
 # --- FastAPI Routes ---
@@ -72,30 +75,101 @@ templates = Jinja2Templates(directory="templates")
 async def read_root(request: Request):
     return templates.TemplateResponse("index.html", {"request": request})
 
+@app.get("/config/keys", response_class=JSONResponse)
+async def get_saved_keys():
+    return load_keys_from_file()
+    
+@app.post("/config/keys", response_class=JSONResponse)
+async def save_and_validate_keys(keys: ApiKeys):
+    key_dict = keys.dict()
+    save_keys_to_file(key_dict)
+    validation = await validate_keys(key_dict)
+    return validation
+    
+@app.post("/config/clear_keys", response_class=JSONResponse)
+async def clear_saved_keys():
+    try:
+        with open(KEYS_FILE,"w") as f:
+            json.dumps({},f) 
+        logger.info("API keys file has been cleared by user request.")
+        return {"status": "success", "message": "API keys cleared."}  
+    except Exception as e:
+        logger.error(f"Failed to clear Api Keys file: {e}")
+        return {"status": "error", "message": "Could not clear API keys."}
+
 @app.get("/favicon.ico", include_in_schema=False)
 async def favicon():
     return FileResponse("static/favicon.ico")
+
+@app.get("/history/sessions", response_class=JSONResponse)
+async def get_session_history():
+    sessions = []
+    # Get the latest chat histories from file
+    current_chat_histories = {}
+    if os.path.exists(HISTORY_FILE):
+        try:
+            with open(HISTORY_FILE, "r") as f:
+                if os.path.getsize(HISTORY_FILE) > 0:
+                    current_chat_histories = json.load(f)
+        except (json.JSONDecodeError, IOError):
+            current_chat_histories = {}
+    
+    # Create sessions list from chat histories
+    for session_id, history in current_chat_histories.items():
+        if history and len(history) > 0:
+            # Find the first user message to use as title
+            first_user_message = ""
+            for message in history:
+                if message.get("role") == "user" and message.get("parts"):
+                    first_user_message = message["parts"][0]
+                    break
+            
+            if first_user_message:
+                # Create a short title from the first user message
+                title = first_user_message[:35] + "..." if len(first_user_message) > 35 else first_user_message
+                sessions.append({"id": session_id, "title": title})
+    
+    # Sort by session_id (most recent first)
+    sessions.sort(key=lambda x: x["id"], reverse=True)
+    
+    # Return last 20 sessions
+    return sessions
 
 # --- WebSocket Endpoint ---
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
+    
     logger.info("🎤 Client connected via WebSocket")
     session_id = None
     history = []
+    
     try:
         initial_data = await asyncio.wait_for(websocket.receive_text(), timeout=10)
         payload = json.loads(initial_data)
         session_id = payload.get("session_id")
-        if not session_id:
-            await websocket.close(code=1008, reason="Session ID not provided")
+        api_keys = payload.get("api_keys")
+        
+        if not all((session_id, api_keys)):
+            await websocket.close(code=1008, reason="Session ID or Api keys not provided.")
             return
+        
         logger.info(f"Client connected with session_id: {session_id}")
         # Use setdefault to get or create the session history
-        history = chat_histories.setdefault(session_id, [])
-        if history:
-            logger.info(f"Found existing history for session {session_id}. Sending to client.")
+        if session_id in chat_histories:
+                history = chat_histories[session_id]
+                logger.info(f"Loaded existing session with {len(history)} messages")
+        else:
+                history = []
+                logger.info(f"Created new session: {session_id}")
+            
+            # Always update chat_histories with current session reference
+        chat_histories[session_id] = history
+            
+            # Send existing history to client if available
+        if history and len(history) > 0:
             await websocket.send_json({"type": "history", "data": history})
+            logger.info(f"Sent {len(history)} messages to client for session {session_id}")
 
     except (asyncio.TimeoutError, json.JSONDecodeError, KeyError):
         await websocket.close(code=1008, reason="Invalid initialization")
@@ -105,15 +179,15 @@ async def websocket_endpoint(websocket: WebSocket):
     llm_task = None
 
     # --- Service Initialization ---
-    murf_service = MurfWebSocketService()
-    llm_service = LLMService()
+    murf_service = MurfWebSocketService(api_key=api_keys.get("MURF_API_KEY"))
+    llm_service = LLMService(api_key=api_keys.get("GEMINI_API_KEY"))
 
     def send_websocket_message(message_type, **kwargs):
         if websocket.client_state.name == 'CONNECTED':
             asyncio.run_coroutine_threadsafe(websocket.send_json({"type": message_type, **kwargs}), loop)
 
     async def llm_and_murf_pipeline(transcript: str):
-        nonlocal llm_task
+        nonlocal llm_task, history
         llm_response = ""
         try:
             llm_stream = llm_service.get_response_stream(history, transcript)
@@ -127,25 +201,13 @@ async def websocket_endpoint(websocket: WebSocket):
             
             audio_generator = murf_service.stream_text_to_audio(tts_chunk_generator())
             
-            all_audio_data = []
             audio_chunk_count = 0
             async for response in audio_generator:
                 if response.get("type") == "audio_chunk":
                     audio_chunk_count += 1
                     send_websocket_message("audio", audio_chunk=response["audio_base64"])
-                    all_audio_data.append(base64.b64decode(response["audio_base64"]))
-            
                 
             logger.info(f"Received a total of {audio_chunk_count} audio chunks from Murf.")
-            if all_audio_data:
-                output_dir = os.path.join("media", "murf_responses")
-                os.makedirs(output_dir, exist_ok=True)
-                output_filename = f"llm_response_{datetime.now().strftime('%Y%m%d_%H%M%S')}.wav"
-                output_path = os.path.join(output_dir, output_filename)
-                with open(output_path, "wb") as audio_file:
-                    audio_file.write(b"".join(all_audio_data))
-                logger.info(f"✅ Successfully saved Murf audio to {output_path}")
-
             send_websocket_message("llm_response_end")
 
             if llm_response:
@@ -167,15 +229,13 @@ async def websocket_endpoint(websocket: WebSocket):
 
         send_websocket_message("transcript", transcript=transcript, is_final=is_final)
         
-        # CRITICAL FIX: Check the lock *before* scheduling the async task.
-        # This prevents the race condition.
         if is_final and not llm_task:
             llm_task = asyncio.run_coroutine_threadsafe(
                 llm_and_murf_pipeline(transcript), loop
             )
 
     # Pass the new handler function to the service
-    assembly_service = AssemblyAIService(on_turn_callback=handle_assemblyai_turn)
+    assembly_service = AssemblyAIService(api_key=api_keys.get("ASSEMBLYAI_API_KEY"), on_turn_callback=handle_assemblyai_turn)
 
     try:
         await asyncio.gather(
@@ -185,13 +245,17 @@ async def websocket_endpoint(websocket: WebSocket):
         
         while True:
             data = await websocket.receive()
-            if data.get("type") == "interrupt":
-                logger.info("Received interrupt signal from client.")
-                if llm_task and not llm_task.done():
-                    llm_task.cancel() # Cancel the server-side pipeline
-                await murf_service.clear_context() # Tell Murf to stop TTS
-                continue
-            if "bytes" in data:
+            if "text" in data:
+                message = json.loads(data["text"])
+                if message.get("type") == "interrupt":
+                    logger.info("Received interrupt signal from client.")
+                    if llm_task and not llm_task.done():
+                        llm_task.cancel()
+                    await murf_service.clear_context()
+            
+            # Case 2: The message is a binary audio message
+            elif "bytes" in data:
+                # This is where the audio gets sent to AssemblyAI
                 await assembly_service.stream_audio(data["bytes"])
 
     except WebSocketDisconnect:
@@ -205,3 +269,9 @@ async def websocket_endpoint(websocket: WebSocket):
             murf_service.disconnect()
         )
         logger.info(f"Cleanup complete for session_id: {session_id}")
+        
+
+if __name__ == "__main__":
+    # The port will be set by Render, default to 8000 for local testing
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run(app, host="0.0.0.0", port=port)        

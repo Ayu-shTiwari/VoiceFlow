@@ -19,3 +19,9 @@ class ErrorResponse(BaseModel):
     errorMessage: str
     responseText: str    
     
+class ApiKeys(BaseModel):
+    GEMINI_API_KEY: str
+    ASSEMBLYAI_API_KEY: str
+    MURF_API_KEY: str
+    TAVILY_API_KEY: str
+    WEATHER_API_KEY: str

@@ -1,36 +1,280 @@
 document.addEventListener('DOMContentLoaded', () => {
     // --- UI ELEMENTS ---
+    const body = document.body;
+    const appContainer = document.querySelector('.app-container');
+    const leftSidebar = document.getElementById('leftSidebar');
+    const rightSidebar = document.getElementById('rightSidebar');
+    const mainChat = document.getElementById('mainChat');
     const recordButton = document.getElementById('recordButton');
     const newChatButton = document.getElementById('newChatButton');
+    const validateButton = document.getElementById('validateButton');
+    const initialValidateButton = document.getElementById('initialValidateButton');
+    const sessionHistoryUl = document.getElementById('sessionHistory');
     const responseStatus = document.getElementById('response-status');
     const conversationDiv = document.getElementById('conversationDiv');
     const responseLoader = document.getElementById('response-loader');
+    const clearKeysButton = document.getElementById('clearKeysButton');
+    
+    // Sidebar toggles
+    const leftSidebarToggle = document.getElementById('leftSidebarToggle');
+    const rightSidebarToggle = document.getElementById('rightSidebarToggle');
+    const closeLSidebar = document.getElementById('closeLSidebar');
+    const closeRSidebar = document.getElementById('closeRSidebar');
+
+    // Key inputs for both initial setup and settings sidebar
+    const keyInputs = {
+        gemini: document.getElementById('geminiKey'),
+        assembly: document.getElementById('assemblyKey'),
+        murf: document.getElementById('murfKey'),
+        tavily: document.getElementById('tavilyKey'),
+        weather: document.getElementById('weatherKey')
+    };
+
+    const initialKeyInputs = {
+        gemini: document.getElementById('initialGeminiKey'),
+        assembly: document.getElementById('initialAssemblyKey'),
+        murf: document.getElementById('initialMurfKey'),
+        tavily: document.getElementById('initialTavilyKey'),
+        weather: document.getElementById('initialWeatherKey')
+    };
+
+    const statusIcons = {
+        gemini: document.getElementById('geminiStatus'),
+        assembly: document.getElementById('assemblyStatus'),
+        murf: document.getElementById('murfStatus'),
+        tavily: document.getElementById('tavilyStatus'),
+        weather: document.getElementById('weatherStatus')
+    };
+
+    const initialStatusIcons = {
+        gemini: document.getElementById('initialGeminiStatus'),
+        assembly: document.getElementById('initialAssemblyStatus'),
+        murf: document.getElementById('initialMurfStatus'),
+        tavily: document.getElementById('initialTavilyStatus'),
+        weather: document.getElementById('initialWeatherStatus')
+    };
 
     // --- STATE & AUDIO VARIABLES ---
     let socket;
     let isRecording = false;
-
-    // For recording
-    let audioContext;
-    let processor;
-    let source;
-    let stream;
-
-    // For playback
-    let playbackAudioContext;
-    let audioQueue = []; // This will now store raw ArrayBuffer chunks
-    let isPlaying = false;
-    let lastUserMessageDiv = null;
-    let currentAssistantMessageSpan = null; 
+    let sessionId;
+    let apiKeys = {};
+    let keysValidated = false;
+    let isLeftSidebarOpen = false;
+    let isRightSidebarOpen = false;
     let tempTranscriptSpan = null;
 
+    let audioContext;
+    let audioWorkletNode;
+    let microphoneStream;
+    
+    // For playback
+    let audioQueue = [];
+    let isPlaying = false;
+    let playbackAudioContext;
     let passiveAudioContext;
     let passiveStream;
     let analyser;
     let passiveMonitoringId;
-    const BARGE_IN_THRESHOLD = 40;
+    let currentAssistantMessageSpan = null;
+    let currentUserMessageSpan = null;
+    const BARGE_IN_THRESHOLD = 10;
+
+    const initialAudio = async () => {
+        if(audioContext) return;
+        try {
+            audioContext = new (window.AudioContext || window.webkitAudioContext)({
+                sampleRate: 16000
+            });
+            await audioContext.audioWorklet.addModule('/static/recorder-processor.js');
+            console.log("AudioWorklet processor loaded successfully.");
+        } catch (e) {
+            console.error('Failed to initialize AudioContext or AudioWorklet:', e);
+            updateUIState('error', 'Audio system failed to start.');
+        }
+    };
+    
+    // --- SIDEBAR MANAGEMENT ---
+    const toggleLeftSidebar = () => {
+        isLeftSidebarOpen = !isLeftSidebarOpen;
+        leftSidebar.classList.toggle('open', isLeftSidebarOpen);
+        leftSidebarToggle.classList.toggle('active', isLeftSidebarOpen);
+        updateChatLayout();
+    };
+
+    const toggleRightSidebar = () => {
+        isRightSidebarOpen = !isRightSidebarOpen;
+        rightSidebar.classList.toggle('open', isRightSidebarOpen);
+        rightSidebarToggle.classList.toggle('active', isRightSidebarOpen);
+        updateChatLayout();
+    };
+
+    const closeLeftSidebar = () => {
+        isLeftSidebarOpen = false;
+        leftSidebar.classList.remove('open');
+        leftSidebarToggle.classList.remove('active');
+        updateChatLayout();
+    };
+
+    const closeRightSidebar = () => {
+        isRightSidebarOpen = false;
+        rightSidebar.classList.remove('open');
+        rightSidebarToggle.classList.remove('active');
+        updateChatLayout();
+    };
+
+    const updateChatLayout = () => {
+        appContainer.classList.toggle('left-open', isLeftSidebarOpen);
+        appContainer.classList.toggle('right-open', isRightSidebarOpen);
+        appContainer.classList.toggle('both-open', isLeftSidebarOpen && isRightSidebarOpen);
+    };
 
     // --- UI MANAGEMENT ---
+    const initializeSession = async () => {
+        await checkStoredKeys();
+    };
+
+    const switchToInitialView = () => {
+        body.classList.add('initial-view');
+        body.classList.remove('app-view');
+    };
+
+    const switchToAppView = async () => {
+        const urlParams = new URLSearchParams(window.location.search);
+        sessionId = urlParams.get('session_id');
+        if (!sessionId) {
+            sessionId = crypto.randomUUID();
+            window.history.replaceState({}, '', `/?session_id=${sessionId}`);
+        }
+        
+        body.classList.remove('initial-view');
+        body.classList.add('app-view');
+        
+        await fetchAndDisplayHistory();
+        unlockChat();
+    };
+
+    const checkStoredKeys = async () => {
+        try {
+            const response = await fetch('/config/keys');
+            const storedKeys = await response.json();
+            if (storedKeys && Object.keys(storedKeys).length > 0 && storedKeys.GEMINI_API_KEY) {
+                // Populate both initial and settings forms
+                Object.keys(keyInputs).forEach(key => {
+                    const keyName = `${key.toUpperCase()}_API_KEY`;
+                    if (keyInputs[key] && storedKeys[keyName]) {
+                        keyInputs[key].value = storedKeys[keyName];
+                    }
+                    if (initialKeyInputs[key] && storedKeys[keyName]) {
+                        initialKeyInputs[key].value = storedKeys[keyName];
+                    }
+                });
+                await validateApiKeys();
+            } else {
+                switchToInitialView();
+            }
+        } catch (error) {
+            console.error("Could not fetch stored keys:", error);
+            switchToInitialView();
+        }
+    };
+
+    const validateApiKeys = async (useInitialInputs = false) => {
+        responseStatus.textContent = "Validating keys...";
+        
+        const inputsToUse = useInitialInputs ? initialKeyInputs : keyInputs;
+        const iconsToUse = useInitialInputs ? initialStatusIcons : statusIcons;
+        
+        Object.values(iconsToUse).forEach(icon => icon.className = 'status-icon');
+        
+        const keysToValidate = {
+            GEMINI_API_KEY: inputsToUse.gemini.value.trim(),
+            ASSEMBLYAI_API_KEY: inputsToUse.assembly.value.trim(),
+            MURF_API_KEY: inputsToUse.murf.value.trim(),
+            TAVILY_API_KEY: inputsToUse.tavily.value.trim(),
+            WEATHER_API_KEY: inputsToUse.weather.value.trim()
+        };
+        
+        try {
+            const response = await fetch('/config/keys', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(keysToValidate)
+            });
+            const results = await response.json();
+            let allValid = true;
+            
+            for (const [key, status] of Object.entries(results)) {
+                if (iconsToUse[key]) {
+                    iconsToUse[key].classList.add(status);
+                }
+                if (status !== 'valid') allValid = false;
+            }
+            
+            if (allValid) {
+                apiKeys = keysToValidate;
+                keysValidated = true;
+                
+                // Sync values between forms
+                if (useInitialInputs) {
+                    Object.keys(keyInputs).forEach(key => {
+                        if (keyInputs[key] && inputsToUse[key]) {
+                            keyInputs[key].value = inputsToUse[key].value;
+                        }
+                    });
+                } else {
+                    Object.keys(initialKeyInputs).forEach(key => {
+                        if (initialKeyInputs[key] && inputsToUse[key]) {
+                            initialKeyInputs[key].value = inputsToUse[key].value;
+                        }
+                    });
+                }
+                
+                if (body.classList.contains('initial-view')) {
+                    switchToAppView();
+                } else {
+                    unlockChat();
+                    closeRightSidebar();
+                }
+                connectWebSocket();
+            } else {
+                responseStatus.textContent = "Some API keys are invalid. Please check them.";
+            }
+        } catch (error) {
+            responseStatus.textContent = "Failed to validate keys. Check server.";
+        }
+    };
+
+    const unlockChat = async () => {
+        await initialAudio();
+        recordButton.disabled = false;
+        responseStatus.textContent = "All set! Click the button to speak.";
+    };
+
+    const fetchAndDisplayHistory = async () => {
+        try {
+            const response = await fetch('/history/sessions');
+            const sessions = await response.json();
+            sessionHistoryUl.innerHTML = '';
+            sessions.forEach(session => {
+                const li = document.createElement('li');
+                const a = document.createElement('a');
+                a.href = `/?session_id=${session.id}`;
+                a.textContent = session.title || `Session ${session.id.substring(0, 8)}...`;
+                a.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    window.location.href = a.href;
+                    closeLeftSidebar();
+                });
+                li.appendChild(a);
+                sessionHistoryUl.appendChild(li);
+            });
+            sessionHistoryUl.scrollTop = sessionHistoryUl.scrollHeight;
+        } catch (error) {
+            console.error("Failed to fetch session history:", error);
+        }
+    };
+
     const updateUIState = (state, message = '') => {
         recordButton.disabled = state === 'thinking';
         responseLoader.style.display = state === 'thinking' ? 'block' : 'none';
@@ -56,61 +300,53 @@ document.addEventListener('DOMContentLoaded', () => {
     const displayMessage = (role, text) => {
         if (!text) return;
         
-        // Create a new container for each message
         const messageElement = document.createElement('div');
         messageElement.classList.add('message', role === 'user' ? 'user-message' : 'assistant-message');
         
-        // Create the 'You:' or 'Assistant:' label
         const strong = document.createElement('strong');
         strong.textContent = role === 'user' ? 'You: ' : 'Assistant: ';
         
-        // Create the span for the actual text content
         const span = document.createElement('span');
         span.textContent = text;
         
-        // Assemble and append the message to the conversation
         messageElement.appendChild(strong);
         messageElement.appendChild(span);
         conversationDiv.appendChild(messageElement);
         
-        // Auto-scroll to the bottom
         conversationDiv.scrollTop = conversationDiv.scrollHeight;
     };
 
     // --- REAL-TIME RECORDING ---
     const startRecording = async () => {
+        console.log("Attempting to start recording...");
+        if (audioContext.state === 'suspended') {
+            console.log("AudioContext is suspended, resuming...");
+            await audioContext.resume();
+        }
+
         if (isPlaying) {
-            console.log("audio playback for new recording.");
-            // Immediately close the audio context to stop sound
-            if (playbackAudioContext) {
-                playbackAudioContext.close();
-            }
-            audioQueue = []; // Clear any pending audio chunks
+            if (playbackAudioContext) playbackAudioContext.close();
             isPlaying = false;
-             // Reset the playback state
-            if (socket && socket.readyState === WebSocket.OPEN) {
-                socket.send(JSON.stringify({ type: 'interrupt' }));
-            }
         }
         try {
-            lastUserMessageDiv = null;
-            stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            microphoneStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            console.log("Successfully obtained microphone stream:", microphoneStream);
             isRecording = true;
             updateUIState('recording');
-
-            audioContext = new AudioContext({ sampleRate: 16000 });
-            source = audioContext.createMediaStreamSource(stream);
-            processor = audioContext.createScriptProcessor(4096, 1, 1);
-
-            source.connect(processor);
-            processor.connect(audioContext.destination);
-
-            processor.onaudioprocess = (event) => {
-                if (!socket || socket.readyState !== WebSocket.OPEN) return;
-                const inputData = event.inputBuffer.getChannelData(0);
-                const pcm16 = floatTo16BitPCM(inputData);
-                socket.send(pcm16); 
+            
+            audioWorkletNode = new AudioWorkletNode(audioContext, 'recorder-processor');
+            console.log("AudioWorkletNode created.");
+            
+            audioWorkletNode.port.onmessage = (event) => {
+                console.log(`Data received from processor. Size: ${event.data.byteLength}`); 
+                if (socket && socket.readyState === WebSocket.OPEN) {
+                    socket.send(event.data);
+                }
             };
+
+            const source = audioContext.createMediaStreamSource(microphoneStream);
+            source.connect(audioWorkletNode);
+            audioWorkletNode.connect(audioContext.destination);
 
         } catch (error) {
             console.error("Microphone access error:", error);
@@ -119,97 +355,84 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     const stopRecording = () => {
+        if(!isRecording) return;
         isRecording = false;
-
-        if (processor) processor.disconnect();
-        if (source) source.disconnect();
-        if (stream) stream.getTracks().forEach(track => track.stop());
-        if (audioContext) audioContext.close();
         updateUIState('ready');
-    };
 
-    function floatTo16BitPCM(float32Array) {
-        const buffer = new ArrayBuffer(float32Array.length * 2);
-        const view = new DataView(buffer);
-        for (let i = 0; i < float32Array.length; i++) {
-            let s = Math.max(-1, Math.min(1, float32Array[i]));
-            view.setInt16(i * 2, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+        if (microphoneStream){
+            microphoneStream.getTracks().forEach(track => track.stop());
         }
-        return buffer;
-    }
-
-    const initializeSession = () => {
-        const urlParams = new URLSearchParams(window.location.search);
-        sessionId = urlParams.get('session_id');
-        if (!sessionId) {
-            sessionId = crypto.randomUUID();
-            const newUrl = `${window.location.pathname}?session_id=${sessionId}`;
-            window.history.pushState({ path: newUrl }, '', newUrl);
-        }
-        connectWebSocket();
+        if (audioWorkletNode) {
+            audioWorkletNode.disconnect();
+        }   
     };
 
     // --- SESSION & WEBSOCKET ---
     const connectWebSocket = () => {
+        if (!keysValidated || (socket && socket.readyState === WebSocket.OPEN)) return;
+
         const wsUrl = `ws://${window.location.host}/ws`;
         socket = new WebSocket(wsUrl);
 
         socket.onopen = () => {
             console.log("WebSocket connected.");
-            socket.send(JSON.stringify({ session_id: sessionId }));
+            socket.send(JSON.stringify({ session_id: sessionId , api_keys: apiKeys }));
             updateUIState('ready');
         };
 
         socket.onmessage = (event) => {
             const result = JSON.parse(event.data);
 
-            if (result.type === 'history') {
-                console.log("Received existing chat history.");
-                conversationDiv.innerHTML = ''; // Clear any existing messages
-                result.data.forEach(message => {
-                    // The history format is { role: 'user'/'assistant', parts: ['text'] }
-                    const role = message.role;
-                    const text = message.parts[0];
-                    displayMessage(role, text);
-                });
-                lastUserMessageDiv = null; // Reset for new messages
-                currentAssistantMessageSpan = null;
-            }
+            switch (result.type) {
+                case 'history':
+                    console.log("Received existing chat history.");
+                    conversationDiv.innerHTML = '';
+                    result.data.forEach(message => {
+                        const role = message.role;
+                        const text = message.parts[0];
+                        displayMessage(role, text);
+                    });
+                    currentAssistantMessageSpan = null;
+                    break;
 
-            if (result.type === 'transcript') {
-                if (result.is_final) {
-                    if (tempTranscriptSpan) {
-                    tempTranscriptSpan.remove();
-                    tempTranscriptSpan = null;
+                case 'transcript':
+                    if (result.is_final) {
+                        if (tempTranscriptSpan) {
+                            tempTranscriptSpan.remove();
+                            tempTranscriptSpan = null;
+                        }
+                        displayMessage('user', result.transcript);
+                        stopRecording();
+                        updateUIState('thinking');
                     }
-                    displayMessage('user', result.transcript);
-                    updateUIState('thinking');
-                }
-                
-            } else if (result.type === 'llm_response') {
-                if (!currentAssistantMessageSpan) {
-                    const messageElement = document.createElement('div');
-                    messageElement.classList.add('message', 'assistant-message');
-                    const strong = document.createElement('strong');
-                    strong.textContent = 'Assistant: ';
-                    currentAssistantMessageSpan = document.createElement('span');
-                    messageElement.appendChild(strong);
-                    messageElement.appendChild(currentAssistantMessageSpan);
-                    conversationDiv.appendChild(messageElement);
-                }
-                currentAssistantMessageSpan.textContent += result.chunk;
-                conversationDiv.scrollTop = conversationDiv.scrollHeight;
-            } else if (result.type === 'audio') {
-                // MODIFIED: Silently collect audio chunks
-                console.log("Audio chunk received and queued.");
-                const audioChunk = base64ToArrayBuffer(result.audio_chunk);
-                audioQueue.push(audioChunk);
-            } else if (result.type === 'llm_response_end') {
-                // MODIFIED: This is now the trigger to start playback
-                currentAssistantMessageSpan = null;
-                if (audioQueue.length > 0) {
-                    processAndPlayAudioQueue();
-                }
+                    break;
+
+                case 'llm_response':
+                    if (!currentAssistantMessageSpan) {
+                        const messageElement = document.createElement('div');
+                        messageElement.classList.add('message', 'assistant-message');
+                        const strong = document.createElement('strong');
+                        strong.textContent = 'Assistant: ';
+                        currentAssistantMessageSpan = document.createElement('span');
+                        messageElement.appendChild(strong);
+                        messageElement.appendChild(currentAssistantMessageSpan);
+                        conversationDiv.appendChild(messageElement);
+                    }
+                    currentAssistantMessageSpan.textContent += result.chunk;
+                    conversationDiv.scrollTop = conversationDiv.scrollHeight;
+                    break;
+
+                case 'audio':
+                    const audioChunk = base64ToArrayBuffer(result.audio_chunk);
+                    audioQueue.push(audioChunk);
+                    break;
+
+                case 'llm_response_end':
+                    currentAssistantMessageSpan = null;
+                    if (audioQueue.length > 0) {
+                        processAndPlayAudioQueue();
+                    }
+                    break;
             }
         };
 
@@ -219,19 +442,15 @@ document.addEventListener('DOMContentLoaded', () => {
         };
     };
     
-    // --- HELPER FUNCTIONS for AUDIO PROCESSING ---
-    // --- AUDIO PLAYBACK (NEW LOGIC) ---
+    // --- AUDIO PLAYBACK ---
     async function processAndPlayAudioQueue() {
         if (isPlaying || audioQueue.length === 0) return;
         
         isPlaying = true;
         updateUIState('playing');
 
-        // Step 1: Concatenate all audio buffers in the queue
         const fullAudioBuffer = concatBuffers(audioQueue);
-        // Step 2: Create a valid WAV header for the concatenated data
         const wavBuffer = createWavFile(fullAudioBuffer);
-        // Step 3: Clear the queue for the next response
         audioQueue = [];
 
         if (!playbackAudioContext || playbackAudioContext.state === 'closed') {
@@ -239,7 +458,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         try {
-            // Step 4: Decode the complete WAV file data
             const audioBuffer = await playbackAudioContext.decodeAudioData(wavBuffer);
             const sourceNode = playbackAudioContext.createBufferSource();
             sourceNode.buffer = audioBuffer;
@@ -250,18 +468,20 @@ document.addEventListener('DOMContentLoaded', () => {
                 updateUIState('ready');
             };
             sourceNode.start();
-            await startPassiveListening();
+            setTimeout(startPassiveListening, 500);
         } catch (error) {
             console.error("Error decoding concatenated audio data:", error);
             isPlaying = false;
             updateUIState('ready');
         }
     }
+
     async function startPassiveListening() {
+        if (!isPlaying) return;
         try {
             passiveStream = await navigator.mediaDevices.getUserMedia({ audio: true });
             passiveAudioContext = new AudioContext();
-            passiveSource = passiveAudioContext.createMediaStreamSource(passiveStream);
+            const passiveSource = passiveAudioContext.createMediaStreamSource(passiveStream);
             analyser = passiveAudioContext.createAnalyser();
             analyser.fftSize = 256;
             passiveSource.connect(analyser);
@@ -283,6 +503,10 @@ document.addEventListener('DOMContentLoaded', () => {
         const dataArray = new Uint8Array(bufferLength);
 
         const checkVolume = () => {
+            if (!isPlaying) {
+                stopPassiveListening();
+                return;
+            }
             analyser.getByteFrequencyData(dataArray);
             let sum = 0;
             for (let i = 0; i < bufferLength; i++) {
@@ -293,10 +517,8 @@ document.addEventListener('DOMContentLoaded', () => {
             if (averageVolume > BARGE_IN_THRESHOLD) {
                 console.log("Barge-in detected! User is speaking.");
 
-                // Stop passive monitoring
                 stopPassiveListening();
 
-                // --- 🔥 INTERRUPT CURRENT PLAYBACK ---
                 if (isPlaying) {
                     if (playbackAudioContext) {
                         playbackAudioContext.close();
@@ -309,10 +531,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                 }
 
-                // --- 🔥 START RECORDING IMMEDIATELY ---
                 startRecording();
-
-                return; // stop monitoring
+                return;
             }
 
             passiveMonitoringId = requestAnimationFrame(checkVolume);
@@ -321,6 +541,7 @@ document.addEventListener('DOMContentLoaded', () => {
         passiveMonitoringId = requestAnimationFrame(checkVolume);
     }
 
+    // --- HELPER FUNCTIONS ---
     function base64ToArrayBuffer(base64) {
         const binaryString = window.atob(base64);
         const len = binaryString.length;
@@ -330,7 +551,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         return bytes.buffer;
     }
-
 
     function concatBuffers(buffers) {
         let totalLength = 0;
@@ -357,23 +577,19 @@ document.addEventListener('DOMContentLoaded', () => {
         const buffer = new ArrayBuffer(44 + dataSize);
         const view = new DataView(buffer);
 
-        // RIFF header
         writeString(view, 0, 'RIFF');
         view.setUint32(4, 36 + dataSize, true);
         writeString(view, 8, 'WAVE');
-        // fmt sub-chunk
         writeString(view, 12, 'fmt ');
         view.setUint32(16, 16, true);
-        view.setUint16(20, 1, true); // PCM format
+        view.setUint16(20, 1, true);
         view.setUint16(22, numChannels, true);
         view.setUint32(24, sampleRate, true);
         view.setUint32(28, byteRate, true);
         view.setUint16(32, blockAlign, true);
         view.setUint16(34, bitsPerSample, true);
-        // data sub-chunk
         writeString(view, 36, 'data');
         view.setUint32(40, dataSize, true);
-        // Write the actual audio data
         new Uint8Array(buffer, 44).set(new Uint8Array(audioDataBuffer));
 
         return buffer;
@@ -385,19 +601,78 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-
     // --- EVENT LISTENERS ---
     recordButton.addEventListener('click', () => {
-        if (isRecording) {
-            stopRecording();
-        } else {
-            startRecording();
+        isRecording ? stopRecording() : startRecording();
+    });
+
+    validateButton.addEventListener('click', () => validateApiKeys(false));
+    initialValidateButton.addEventListener('click', () => validateApiKeys(true));
+
+    newChatButton.addEventListener('click', () => {
+        window.location.href = window.location.pathname;
+    });
+
+    // Sidebar toggles
+    leftSidebarToggle.addEventListener('click', toggleLeftSidebar);
+    rightSidebarToggle.addEventListener('click', toggleRightSidebar);
+    closeLSidebar.addEventListener('click', closeLeftSidebar);
+    closeRSidebar.addEventListener('click', closeRightSidebar);
+
+    // Close sidebars when clicking outside
+    document.addEventListener('click', (e) => {
+        if (isLeftSidebarOpen && !leftSidebar.contains(e.target) && !leftSidebarToggle.contains(e.target)) {
+            closeLeftSidebar();
+        }
+        if (isRightSidebarOpen && !rightSidebar.contains(e.target) && !rightSidebarToggle.contains(e.target)) {
+            closeRightSidebar();
         }
     });
 
-    newChatButton.addEventListener('click', () => {
-        window.location.href = window.location.pathname; // Reload without session_id
+    clearKeysButton.addEventListener('click', async () => {
+        Object.values(keyInputs).forEach(input => input.value = '');
+        Object.values(initialKeyInputs).forEach(input => input.value = '');
+        Object.values(statusIcons).forEach(icon => icon.className = 'status-icon');
+        Object.values(initialStatusIcons).forEach(icon => icon.className = 'status-icon');
+        try {
+            await fetch('/config/clear_keys', { method: 'POST' });
+            console.log('API keys cleared successfully on server');
+        } catch (error) {
+            console.error('Error clearing API keys:', error);
+        }
     });
 
+    // Password toggle functionality for both forms
+    document.querySelectorAll('.password-toggle').forEach(button => {
+        button.addEventListener('click', () => {
+            const targetInput = document.getElementById(button.dataset.target);
+            const icon = button.querySelector('i');
+            if (targetInput.type === 'password') {
+                targetInput.type = 'text';
+                icon.classList.replace('fa-eye', 'fa-eye-slash');
+            } else {
+                targetInput.type = 'password';
+                icon.classList.replace('fa-eye-slash', 'fa-eye');
+            }
+        });
+    });
+
+    // Clear button functionality for both forms
+    document.querySelectorAll('.clear-btn').forEach(button => {
+        button.addEventListener('click', () => {
+            const targetInputId = button.dataset.target;
+            const targetInput = document.getElementById(targetInputId);
+            if (targetInput) {
+                targetInput.value = '';
+                const statusId = targetInputId.replace('Key', 'Status');
+                const statusIcon = document.getElementById(statusId);
+                if (statusIcon) {
+                    statusIcon.className = 'status-icon';
+                }
+            }
+        });
+    });
+
+    // Initialize the session
     initializeSession();
-});         
+});

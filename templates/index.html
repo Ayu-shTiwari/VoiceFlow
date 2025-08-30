@@ -8,30 +8,163 @@
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
     <link rel="stylesheet" href="/static/style.css">
-
 </head>
-<body>
-    <div class="container">
-        <div class="header">
-            <h1>AI Voice Assistant</h1>
-            <p id="response-status">Click the button to start.</p>
-            <button id="newChatButton" class="new-chat-button">
-                <i class="fas fa-plus"></i> New Chat
-            </button>
-        </div>
+<body class="initial-view">
 
-        <div id="conversationDiv" class="conversation-log">
+    <!-- App View -->
+    <div class="app-container">
+        <!-- Left Sidebar -->
+        <div class="left-sidebar" id="leftSidebar">
+            <div class="sidebar-header">
+                <h3>Chat History</h3>
+                <button class="close-sidebar" id="closeLSidebar" title="Close Chat History">
+                    <i class="fas fa-times"></i>
+                </button>
             </div>
-
-        <div class="button-container">
-            <div class="loader-container" id="response-loader"></div>
-            <button id="recordButton" class="record-button">record
-                <i class="fas fa-microphone"></i>
-            </button>
+            <div class="sidebar-content">
+                <ul id="sessionHistory" class="session-list">
+                    <!-- Session history will be populated here -->
+                </ul>
+            </div>
         </div>
-        
-        <audio id="response-audio-player"></audio>
-    </div> 
+
+        <!-- Right Sidebar (Settings) -->
+        <div class="right-sidebar" id="rightSidebar">
+            <div class="sidebar-header">
+                <h3>Settings</h3>
+                <button class="close-sidebar" id="closeRSidebar" title="Close Settings">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="sidebar-content">
+                <div class="api-key-form">
+                    <p>Configure your API keys:</p>
+                    
+                    <label for="geminiKey">Gemini API Key</label>
+                    <div class="input-wrapper">
+                        <input type="password" id="geminiKey" placeholder="Enter Gemini Key">
+                        <span class="status-icon" id="geminiStatus"></span>
+                        <button class="clear-btn" data-target="geminiKey" title="Clear"><i class="fas fa-times"></i></button>
+                        <button class="password-toggle" data-target="geminiKey" title="Toggle Visibility"><i class="fas fa-eye"></i></button>
+                    </div>
+
+                    <label for="assemblyKey">AssemblyAI API Key</label>
+                    <div class="input-wrapper">
+                        <input type="password" id="assemblyKey" placeholder="Enter AssemblyAI Key">
+                        <span class="status-icon" id="assemblyStatus"></span>
+                        <button class="clear-btn" data-target="assemblyKey" title="Clear"><i class="fas fa-times"></i></button>
+                        <button class="password-toggle" data-target="assemblyKey" title="Toggle Visibility"><i class="fas fa-eye"></i></button>
+                    </div>
+                    
+                    <label for="murfKey">Murf AI API Key</label>
+                    <div class="input-wrapper">
+                        <input type="password" id="murfKey" placeholder="Enter Murf Key">
+                        <span class="status-icon" id="murfStatus"></span>
+                        <button class="clear-btn" data-target="murfKey" title="Clear"><i class="fas fa-times"></i></button>
+                        <button class="password-toggle" data-target="murfKey" title="Toggle Visibility"><i class="fas fa-eye"></i></button>
+                    </div>
+
+                    <label for="tavilyKey">Tavily API Key</label>
+                    <div class="input-wrapper">
+                        <input type="password" id="tavilyKey" placeholder="Enter Tavily Key">
+                        <span class="status-icon" id="tavilyStatus"></span>
+                        <button class="clear-btn" data-target="tavilyKey" title="Clear"><i class="fas fa-times"></i></button>
+                        <button class="password-toggle" data-target="tavilyKey" title="Toggle Visibility"><i class="fas fa-eye"></i></button>
+                    </div>
+
+                    <label for="weatherKey">OpenWeatherMap API Key</label>
+                    <div class="input-wrapper">
+                        <input type="password" id="weatherKey" placeholder="Enter Weather Key">
+                        <span class="status-icon" id="weatherStatus"></span>
+                        <button class="clear-btn" data-target="weatherKey" title="Clear"><i class="fas fa-times"></i></button>
+                        <button class="password-toggle" data-target="weatherKey" title="Toggle Visibility"><i class="fas fa-eye"></i></button>
+                    </div>
+
+                    <div class="button-group">
+                        <button id="validateButton">Validate Keys</button>
+                        <button id="clearKeysButton" class="secondary-btn">Clear All</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Chat Area -->
+        <div class="main-chat" id="mainChat">
+            <div class="chat-header">
+                <button class="sidebar-toggle left-toggle" id="leftSidebarToggle" title="Chat History">
+                    <i class="fas fa-ellipsis-v"></i>
+                </button>
+                <h2>Kira AI</h2>
+                <div class="header-controls">
+                    <button id="newChatButton" title="New Chat"><i class="fas fa-plus"></i></button>
+                    <button class="sidebar-toggle right-toggle" id="rightSidebarToggle" title="Settings">
+                        <i class="fas fa-cog"></i>
+                    </button>
+                </div>
+            </div>
+            <div class="conversation-wrapper" id="conversationDiv">
+                <!-- Messages will be populated by JavaScript -->
+            </div>
+            <div class="controls">
+                <div id="response-loader"></div>
+                <button id="recordButton" disabled><i class="fas fa-microphone" title="record"></i></button>
+                <div id="response-status">Please validate API keys to begin.</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Initial Setup View -->
+    <div class="initial-setup-container">
+        <div class="api-key-panel">
+            <div class="setup-header">
+                <h2>Configure Kira AI</h2>
+                <p>Enter your API keys to get started</p>
+            </div>
+            <div class="api-key-form">
+                <label for="initialGeminiKey">Gemini API Key</label>
+                <div class="input-wrapper">
+                    <input type="password" id="initialGeminiKey" placeholder="Enter Gemini Key">
+                    <span class="status-icon" id="initialGeminiStatus"></span>
+                    <button class="clear-btn" data-target="initialGeminiKey" title="Clear"><i class="fas fa-times"></i></button>
+                    <button class="password-toggle" data-target="initialGeminiKey" title="Toggle Visibility"><i class="fas fa-eye"></i></button>
+                </div>
+
+                <label for="initialAssemblyKey">AssemblyAI API Key</label>
+                <div class="input-wrapper">
+                    <input type="password" id="initialAssemblyKey" placeholder="Enter AssemblyAI Key">
+                    <span class="status-icon" id="initialAssemblyStatus"></span>
+                    <button class="clear-btn" data-target="initialAssemblyKey" title="Clear"><i class="fas fa-times"></i></button>
+                    <button class="password-toggle" data-target="initialAssemblyKey" title="Toggle Visibility"><i class="fas fa-eye"></i></button>
+                </div>
+                
+                <label for="initialMurfKey">Murf AI API Key</label>
+                <div class="input-wrapper">
+                    <input type="password" id="initialMurfKey" placeholder="Enter Murf Key">
+                    <span class="status-icon" id="initialMurfStatus"></span>
+                    <button class="clear-btn" data-target="initialMurfKey" title="Clear"><i class="fas fa-times"></i></button>
+                    <button class="password-toggle" data-target="initialMurfKey" title="Toggle Visibility"><i class="fas fa-eye"></i></button>
+                </div>
+
+                <label for="initialTavilyKey">Tavily API Key</label>
+                <div class="input-wrapper">
+                    <input type="password" id="initialTavilyKey" placeholder="Enter Tavily Key">
+                    <span class="status-icon" id="initialTavilyStatus"></span>
+                    <button class="clear-btn" data-target="initialTavilyKey" title="Clear"><i class="fas fa-times"></i></button>
+                    <button class="password-toggle" data-target="initialTavilyKey" title="Toggle Visibility"><i class="fas fa-eye"></i></button>
+                </div>
+
+                <label for="initialWeatherKey">OpenWeatherMap API Key</label>
+                <div class="input-wrapper">
+                    <input type="password" id="initialWeatherKey" placeholder="Enter Weather Key">
+                    <span class="status-icon" id="initialWeatherStatus"></span>
+                    <button class="clear-btn" data-target="initialWeatherKey" title="Clear"><i class="fas fa-times"></i></button>
+                    <button class="password-toggle" data-target="initialWeatherKey" title="Toggle Visibility"><i class="fas fa-eye"></i></button>
+                </div>
+
+                <button id="initialValidateButton">Get Started</button>
+            </div>
+        </div>
+    </div>
 
     <script src="/static/script.js"></script>
 </body>

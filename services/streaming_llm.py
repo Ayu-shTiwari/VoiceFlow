@@ -1,5 +1,4 @@
 # llm_service.py
-import os
 import google.generativeai as genai
 import logging
 from typing import List, Dict
@@ -13,10 +12,8 @@ logger = logging.getLogger(__name__)
 
 class LLMService:
     """Handles interaction with the Google Gemini LLM."""
-    def __init__(self):
-        self.api_key = os.getenv("GEMINI_API_KEY")
-        if not self.api_key:
-            raise ValueError("GEMINI_API_KEY environment variable not set.")
+    def __init__(self, api_key: str):
+        self.api_key = api_key
         genai.configure(api_key=self.api_key)
 
       # Model - Personification
