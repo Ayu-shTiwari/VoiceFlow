@@ -3,6 +3,7 @@ import os
 import json
 import logging
 import uvicorn
+import base64
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
@@ -90,7 +91,7 @@ async def save_and_validate_keys(keys: ApiKeys):
 async def clear_saved_keys():
     try:
         with open(KEYS_FILE,"w") as f:
-            json.dumps({},f) 
+            json.dump({},f) 
         logger.info("API keys file has been cleared by user request.")
         return {"status": "success", "message": "API keys cleared."}  
     except Exception as e:

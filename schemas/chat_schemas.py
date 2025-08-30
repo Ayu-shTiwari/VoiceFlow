@@ -20,8 +20,8 @@ class ErrorResponse(BaseModel):
     responseText: str    
     
 class ApiKeys(BaseModel):
-    GEMINI_API_KEY: str
-    ASSEMBLYAI_API_KEY: str
-    MURF_API_KEY: str
-    TAVILY_API_KEY: str
-    WEATHER_API_KEY: str
+    GEMINI_API_KEY: Optional[str] = None
+    ASSEMBLYAI_API_KEY: Optional[str] = None
+    MURF_API_KEY: Optional[str] = None
+    TAVILY_API_KEY: Optional[str] = None
+    WEATHER_API_KEY: Optional[str] = None

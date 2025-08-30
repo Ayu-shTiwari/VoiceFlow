@@ -44,7 +44,7 @@ class MurfWebSocketService:
             }
             await self.websocket.send(json.dumps(voice_config_msg))
             async with self._recv_lock:
-                await asyncio.wait_for(self.websocket.recv(), timeout=3.0)
+                await asyncio.wait_for(self.websocket.recv(), timeout=2.0)
         except asyncio.TimeoutError:
             logger.warning("Timeout waiting for Murf voice config acknowledgment.")
         except Exception as e:
@@ -94,11 +94,11 @@ class MurfWebSocketService:
         while True:
             try:
                 async with self._recv_lock:
-                    response = await asyncio.wait_for(self.websocket.recv(), timeout=10.0)
+                    response = await asyncio.wait_for(self.websocket.recv(), timeout=2.0)
                 data = json.loads(response)
                 if "audio" in data:
                     chunk_counter+=1
-                    logger.info(f"🎵 Murf audio chunk {chunk_counter} received (final: {data.get('final', False)})")
+                    #logger.info(f"🎵 Murf audio chunk {chunk_counter} received (final: {data.get('final', False)})")
                     yield {"type": "audio_chunk", "audio_base64": data["audio"], "is_final": data.get("final", False)}
                     if data.get("final"):
                         logger.info(f"🎵 Murf final audio chunk received. Ending stream ...")

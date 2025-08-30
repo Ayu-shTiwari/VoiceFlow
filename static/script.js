@@ -63,22 +63,25 @@ document.addEventListener('DOMContentLoaded', () => {
     let isLeftSidebarOpen = false;
     let isRightSidebarOpen = false;
     let tempTranscriptSpan = null;
+    let currentUserMessageDiv = null;
 
+    // For recording - using faster ScriptProcessor approach
     let audioContext;
-    let audioWorkletNode;
-    let microphoneStream;
-    
+    let processor;
+    let source;
+    let stream;
+
     // For playback
+    let playbackAudioContext;
     let audioQueue = [];
     let isPlaying = false;
-    let playbackAudioContext;
+    let currentAssistantMessageSpan = null;
+
     let passiveAudioContext;
     let passiveStream;
     let analyser;
     let passiveMonitoringId;
-    let currentAssistantMessageSpan = null;
-    let currentUserMessageSpan = null;
-    const BARGE_IN_THRESHOLD = 10;
+    const BARGE_IN_THRESHOLD = 80;
 
     const initialAudio = async () => {
         if(audioContext) return;
@@ -86,10 +89,9 @@ document.addEventListener('DOMContentLoaded', () => {
             audioContext = new (window.AudioContext || window.webkitAudioContext)({
                 sampleRate: 16000
             });
-            await audioContext.audioWorklet.addModule('/static/recorder-processor.js');
-            console.log("AudioWorklet processor loaded successfully.");
+            console.log("AudioContext initialized successfully.");
         } catch (e) {
-            console.error('Failed to initialize AudioContext or AudioWorklet:', e);
+            console.error('Failed to initialize AudioContext:', e);
             updateUIState('error', 'Audio system failed to start.');
         }
     };
@@ -318,35 +320,39 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- REAL-TIME RECORDING ---
     const startRecording = async () => {
-        console.log("Attempting to start recording...");
-        if (audioContext.state === 'suspended') {
-            console.log("AudioContext is suspended, resuming...");
-            await audioContext.resume();
-        }
-
         if (isPlaying) {
-            if (playbackAudioContext) playbackAudioContext.close();
+            console.log("audio playback for new recording.");
+            // Immediately close the audio context to stop sound
+            if (playbackAudioContext) {
+                playbackAudioContext.close();
+            }
+
+            audioQueue = []; // Clear any pending audio chunks
             isPlaying = false;
+                // Reset the playback state
+            if (socket && socket.readyState === WebSocket.OPEN) {
+                    socket.send(JSON.stringify({ type: 'interrupt' }));
+            }
         }
         try {
-            microphoneStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            console.log("Successfully obtained microphone stream:", microphoneStream);
+            currentUserMessageDiv = null;
+            stream = await navigator.mediaDevices.getUserMedia({ audio: true });
             isRecording = true;
             updateUIState('recording');
-            
-            audioWorkletNode = new AudioWorkletNode(audioContext, 'recorder-processor');
-            console.log("AudioWorkletNode created.");
-            
-            audioWorkletNode.port.onmessage = (event) => {
-                console.log(`Data received from processor. Size: ${event.data.byteLength}`); 
-                if (socket && socket.readyState === WebSocket.OPEN) {
-                    socket.send(event.data);
-                }
-            };
 
-            const source = audioContext.createMediaStreamSource(microphoneStream);
-            source.connect(audioWorkletNode);
-            audioWorkletNode.connect(audioContext.destination);
+            audioContext = new AudioContext({ sampleRate: 16000 });
+            source = audioContext.createMediaStreamSource(stream);
+            processor = audioContext.createScriptProcessor(4096, 1, 1);
+
+            source.connect(processor);
+            processor.connect(audioContext.destination);
+
+            processor.onaudioprocess = (event) => {
+                if (!socket || socket.readyState !== WebSocket.OPEN) return;
+                const inputData = event.inputBuffer.getChannelData(0);
+                const pcm16 = floatTo16BitPCM(inputData);
+                socket.send(pcm16); 
+            };
 
         } catch (error) {
             console.error("Microphone access error:", error);
@@ -355,17 +361,24 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     const stopRecording = () => {
-        if(!isRecording) return;
         isRecording = false;
-        updateUIState('ready');
 
-        if (microphoneStream){
-            microphoneStream.getTracks().forEach(track => track.stop());
-        }
-        if (audioWorkletNode) {
-            audioWorkletNode.disconnect();
-        }   
+        if (processor) processor.disconnect();
+        if (source) source.disconnect();
+        if (stream) stream.getTracks().forEach(track => track.stop());
+        if (audioContext) audioContext.close();
+        updateUIState('ready');
     };
+
+    function floatTo16BitPCM(float32Array) {
+        const buffer = new ArrayBuffer(float32Array.length * 2);
+        const view = new DataView(buffer);
+        for (let i = 0; i < float32Array.length; i++) {
+            let s = Math.max(-1, Math.min(1, float32Array[i]));
+            view.setInt16(i * 2, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+        }
+        return buffer;
+    }
 
     // --- SESSION & WEBSOCKET ---
     const connectWebSocket = () => {
@@ -393,21 +406,45 @@ document.addEventListener('DOMContentLoaded', () => {
                         displayMessage(role, text);
                     });
                     currentAssistantMessageSpan = null;
+                    currentUserMessageDiv = null;
+                    tempTranscriptSpan = null;
                     break;
 
                 case 'transcript':
-                    if (result.is_final) {
-                        if (tempTranscriptSpan) {
-                            tempTranscriptSpan.remove();
-                            tempTranscriptSpan = null;
+                    // Handle interim and final transcripts in-place
+                    if (!result.is_final) {
+                        // Show interim transcript - update in place
+                        if (!tempTranscriptSpan) {
+                            currentUserMessageDiv = document.createElement('div');
+                            currentUserMessageDiv.classList.add('message', 'user-message');
+                            const strong = document.createElement('strong');
+                            strong.textContent = 'You: ';
+                            tempTranscriptSpan = document.createElement('span');
+                            tempTranscriptSpan.style.opacity = '0.7';
+                            tempTranscriptSpan.style.fontStyle = 'italic';
+                            currentUserMessageDiv.appendChild(strong);
+                            currentUserMessageDiv.appendChild(tempTranscriptSpan);
+                            conversationDiv.appendChild(currentUserMessageDiv);
                         }
-                        displayMessage('user', result.transcript);
+                        tempTranscriptSpan.textContent = result.transcript;
+                        conversationDiv.scrollTop = conversationDiv.scrollHeight;
+                    } else {
+                        // Final transcript - finalize and trigger LLM immediately
+                        if (tempTranscriptSpan) {
+                            tempTranscriptSpan.style.opacity = '1';
+                            tempTranscriptSpan.style.fontStyle = 'normal';
+                            tempTranscriptSpan = null;
+                            currentUserMessageDiv = null;
+                        } else {
+                            displayMessage('user', result.transcript);
+                        }
                         stopRecording();
                         updateUIState('thinking');
                     }
                     break;
 
                 case 'llm_response':
+                    // Stream LLM response instantly
                     if (!currentAssistantMessageSpan) {
                         const messageElement = document.createElement('div');
                         messageElement.classList.add('message', 'assistant-message');
@@ -429,6 +466,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 case 'llm_response_end':
                     currentAssistantMessageSpan = null;
+                    updateUIState('ready');
                     if (audioQueue.length > 0) {
                         processAndPlayAudioQueue();
                     }
@@ -442,7 +480,7 @@ document.addEventListener('DOMContentLoaded', () => {
         };
     };
     
-    // --- AUDIO PLAYBACK ---
+    // --- AUDIO PLAYBOOK - Simplified ---
     async function processAndPlayAudioQueue() {
         if (isPlaying || audioQueue.length === 0) return;
         
@@ -462,26 +500,28 @@ document.addEventListener('DOMContentLoaded', () => {
             const sourceNode = playbackAudioContext.createBufferSource();
             sourceNode.buffer = audioBuffer;
             sourceNode.connect(playbackAudioContext.destination);
+            
             sourceNode.onended = () => {
                 isPlaying = false;
                 stopPassiveListening();
                 updateUIState('ready');
             };
+            
             sourceNode.start();
-            setTimeout(startPassiveListening, 500);
+            await startPassiveListening();
+            
         } catch (error) {
-            console.error("Error decoding concatenated audio data:", error);
+            console.error("Error decoding audio data:", error);
             isPlaying = false;
             updateUIState('ready');
         }
     }
 
     async function startPassiveListening() {
-        if (!isPlaying) return;
         try {
             passiveStream = await navigator.mediaDevices.getUserMedia({ audio: true });
             passiveAudioContext = new AudioContext();
-            const passiveSource = passiveAudioContext.createMediaStreamSource(passiveStream);
+            passiveSource = passiveAudioContext.createMediaStreamSource(passiveStream);
             analyser = passiveAudioContext.createAnalyser();
             analyser.fftSize = 256;
             passiveSource.connect(analyser);
@@ -494,19 +534,17 @@ document.addEventListener('DOMContentLoaded', () => {
     function stopPassiveListening() {
         if (passiveMonitoringId) cancelAnimationFrame(passiveMonitoringId);
         if (passiveStream) passiveStream.getTracks().forEach(track => track.stop());
-        if (passiveAudioContext) passiveAudioContext.close();
+        if (passiveAudioContext && passiveAudioContext.state !== 'closed') {
+        passiveAudioContext.close();
+        }
         passiveMonitoringId = null;
     }
-    
+
     function monitorMicVolume() {
         const bufferLength = analyser.frequencyBinCount;
         const dataArray = new Uint8Array(bufferLength);
 
         const checkVolume = () => {
-            if (!isPlaying) {
-                stopPassiveListening();
-                return;
-            }
             analyser.getByteFrequencyData(dataArray);
             let sum = 0;
             for (let i = 0; i < bufferLength; i++) {
@@ -516,28 +554,21 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (averageVolume > BARGE_IN_THRESHOLD) {
                 console.log("Barge-in detected! User is speaking.");
-
                 stopPassiveListening();
 
                 if (isPlaying) {
-                    if (playbackAudioContext) {
-                        playbackAudioContext.close();
-                    }
+                    if (playbackAudioContext) playbackAudioContext.close();
                     audioQueue = [];
                     isPlaying = false;
-
                     if (socket && socket.readyState === WebSocket.OPEN) {
                         socket.send(JSON.stringify({ type: 'interrupt' }));
                     }
                 }
-
                 startRecording();
                 return;
             }
-
             passiveMonitoringId = requestAnimationFrame(checkVolume);
         };
-
         passiveMonitoringId = requestAnimationFrame(checkVolume);
     }
 
@@ -637,6 +668,7 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             await fetch('/config/clear_keys', { method: 'POST' });
             console.log('API keys cleared successfully on server');
+            window.location.reload();
         } catch (error) {
             console.error('Error clearing API keys:', error);
         }

@@ -1,8 +1,13 @@
 <div align="center">
 
-# 🎙️ VoiceFlow AI
+# 🎙️ VoiceFlow AI : Your Personalised Chat Bot 
+### with some personality twist
 
+##
 **A proof-of-concept for a fully voice-controlled AI assistant that can remember your conversations.**
+
+## 🚀 Live Demo
+[Try VoiceFlow Live](https://voiceflow-o1.onrender.com) 
 
 ## 🌟 Features
 
@@ -22,15 +27,17 @@ This project is a complete, end-to-end conversational agent built to feel like a
 - **Voice-to-Voice Conversations**: Speak naturally and receive AI responses in Murf AI's natural voice
 - **Persistent Chat History**: AI remembers previous conversations across sessions
 - **Real-time Transcription**: Convert speech to text using AssemblyAI
-- **Intelligent Responses**: Powered by Google Gemini API
+- **Intelligent Responses**: Powered by Google Gemini API with special persona.
+- **Special Skills Integration**: Includes web search and news fetching capabilities to  enhance responses
 - **Modern UI**: Glass-morphism design with smooth animations
 - **Error Handling**: Graceful fallbacks when APIs are unavailable
 
 ### Technical Features
 - **FastAPI Backend**: Modern, async Python web framework
 - **Session Management**: Unique conversation sessions via URL parameters
-- **Audio Processing**: Record, upload, and process audio files
+- **Audio Processing**: Record and high speed processing of audio files
 - **Multi-API Integration**: Seamless integration with multiple AI services
+- **WebSocket Streaming**: Real-time audio streaming and transcription with AssemblyAI and Murf WebSocket services
 - **Responsive Design**: Works on desktop and mobile devices
 
 ---
@@ -45,8 +52,12 @@ This project is a complete, end-to-end conversational agent built to feel like a
 |     ↳ Language Model | [Google Gemini](https://aistudio.google.com/)            |
 |     ↳ Speech-to-Text | [AssemblyAI](https://www.assemblyai.com/)                |
 |     ↳ Text-to-Speech | [Murf AI](https://murf.ai/)                              |
-|**Templates**         |Jinja2
-| **Styling**          |Modern CSS with glass-morphism effects
+| **llm Skills**       |                                                          |
+|     ↳ Web Search Service & News Service using Tavily SDK(Tavily-Client)
+|     ↳ Weather update using OpenweatherMap API
+| **Templates**        |Jinja2        
+| **Styling**          |Modern CSS with glass-morphism effects                    |
+| **WebSocket**        |Real-time audio streaming and TTS via Murf WebSocket      |
 
 ---
 
@@ -59,20 +70,28 @@ The project is organized into a clean, maintainable structure that separates con
 |   |-- chat_schemas.py
 |
 |-- /services                         # Modules for external AI services (STT, LLM, TTS)
-|   |-- stt_service.py
-|   |-- llm_service.py
-|   |-- tts_service.py 
+|   |-- assembly_service.py
+|   |-- streaming_llm.py
+|   |-- murf_service.py 
+|   |-- config_service.py
+|   |-- /llm_skills
+|       |-- tavily.py
+|       |-- weather.py
 |
 |-- /static                           # Frontend assets
 |   |-- script.js
+|   |-- recorder-processor.js
 |   |-- style.css
 |   |-- fallback_audio.mp3
 |   |-- background.jpg 
+|   |-- favicon.ico
 |
 |-- /templates 
-|   -- index.html                     # Main HTML file
+|   |-- index.html                     # Main HTML file
 |
 |-- .env                              # For storing API keys
+|-- .gitignore                        # For git purpose
+|-- api_keys.json                     # For storing user Api's
 |-- app.py                            # The main FastAPI server
 |-- chat_history.json                 # Stores conversation history
 |-- requirements.txt                  # Python dependencies
@@ -88,7 +107,8 @@ Here’s how to get a copy of the project running on your own machine.
 
 - Python 3.8 or newer.
 - pip (Python package manager)
-- API keys from Murf AI, AssemblyAI, and Google AI Studio.
+- API keys from Murf AI, AssemblyAI, Google AI Studio.
+- For skill usage get API keys from Tavily, OpenWeatherMap
 
 ### Installation and Setup
 
@@ -114,14 +134,16 @@ Here’s how to get a copy of the project running on your own machine.
     pip install -r requirements.txt
     ```
 
-4.  **Set Up Your API Keys**
+4.  **Set Up Your API Keys For Usage** 
     - Create a file named `.env` in the main project folder.
     - Add your API keys to this file like so:
-      ```env
+    ```env
       MURF_API_KEY="your_murf_api_key_here"
       ASSEMBLYAI_API_KEY="your_assemblyai_api_key_here"
       GEMINI_API_KEY="your_gemini_api_key_here"
-      ```
+      TAVILY_API_KEY="your_tavily_api_key"
+      WEATHER_API_KEY="your_openWeatherMap_api_key"
+    ```
 
 ### Running the App
 
@@ -153,10 +175,10 @@ graph TD
     B -->|Plays the Audio| G[You Hear the Response];
 ```
 ## 📖 Usage Guide
-
-- **Starting a Conversation:** Click the microphone button to start recording, speak your message, and click the button again to stop.
-- **New Session:** Click the "New Chat" button in the top-right corner to start a fresh conversation.
-- **Continue a Session:** Simply use the URL with the `session_id` in it to pick up a conversation where you left off.
+- **API_Keys Configuration:** Validate your keys first to unlock chat Session.
+- **Starting a Conversation:** Click the microphone button to start recording, speak your message.
+- **New Session:** Click the "New Chat" button in the top-right corner config button to start a fresh conversation.
+- **Continue a Session:** Simply use the URL with the `session_id` in it to pick up a conversation where you left off or you can look for that session in left sidebar.
 
 #### Session Management
 - **New Session**: Visit `http://localhost:8000` for a new conversation
@@ -172,11 +194,16 @@ graph TD
 MURF_API_KEY=your_key_here
 GEMINI_API_KEY=your_key_here
 ASSEMBLYAI_API_KEY=your_key_here
+TAVILY_API_KEY=your_tavily_api_key
+WEATHER_API_KEY=your_openWeatherMap_api_key
+
 ```
 ### API Key Sources
-- **Murf AI**: https://murf.ai/
-- **Google Gemini**: https://makersuite.google.com/app/apikey
-- **AssemblyAI**: https://www.assemblyai.com/
+- **Murf AI**: [Murf Key](https://murf.ai)
+- **Google Gemini**: [Google Gemini Key](https://makersuite.google.com/app/apikey)
+- **AssemblyAI**: [Assembly Key](https://www.assemblyai.com)
+- **Tavily**: [Tavily Key](https://app.tavily.com/home)
+- **Weather**: [OpenWeatherMap Key](https://openweathermap.org/api)
 
 
 
@@ -185,7 +212,7 @@ ASSEMBLYAI_API_KEY=your_key_here
 ### Common Issues
 
 **1. API Key Errors**
-- Ensure all API keys are correctly set in `.env`
+- Ensure all API keys are configured.
 - Check API key validity and quota limits
 
 **2. Microphone Access**
