@@ -132,7 +132,6 @@ async def get_session_history():
     # Sort by session_id (most recent first)
     sessions.sort(key=lambda x: x["id"], reverse=True)
     
-    # Return last 20 sessions
     return sessions
 
 # --- WebSocket Endpoint ---
