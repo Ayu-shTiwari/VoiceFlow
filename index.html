@@ -1,16 +1,68 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>VoiceFlow Demo</title>
-  <!-- Inline styles for GitHub compatibility -->
+ <meta charset="UTF-8">
+ <meta name="viewport" content="width=device-width, initial-scale=1.0">
+ <title>VoiceFlow Demo</title>
+ <style>
+  body, html {
+   margin: 0;
+   padding: 0;
+   height: 100%;
+   font-family: sans-serif;
+   text-align: center;
+   background: url('static/background.jpg') no-repeat center center fixed;
+   background-size: cover;
+   color: #ffffff; /* Text color for better contrast on dark background */
+  }
+
+  .main-content-container {
+   display: flex;
+   flex-direction: column; /* Stack heading and video vertically */
+   justify-content: center;
+   align-items: center;
+   height: 100vh;
+   -webkit-backdrop-filter: blur(5px); /* For Safari */
+   backdrop-filter: blur(5px);
+   padding: 20px; /* Add some padding around the content */
+  }
+
+  .video-wrapper {
+   border: 2px solid #007bff; /* Blue border for the container */
+   border-radius: 12px; /* Slightly more rounded corners */
+   padding: 15px; /* Space between border and video */
+   background-color: rgba(0, 0, 0, 0.6); /* Semi-transparent background for the wrapper */
+   box-shadow: 0 6px 20px rgba(0,0,0,0.7); /* Stronger shadow for depth */
+   max-width: 85%; /* Adjust wrapper width */
+   margin-top: 20px; /* Space between heading and video wrapper */
+  }
+
+  video {
+   max-width: 100%; /* Make video fit inside its wrapper */
+   height: auto; /* Maintain aspect ratio */
+   border-radius: 8px; /* Keep video itself slightly rounded */
+   display: block; /* Remove extra space below video */
+  }
+
+  h1 {
+   font-size: 2.5em;
+   color: #007bff; /* Heading color */
+   text-shadow: 2px 2px 4px rgba(0,0,0,0.7); /* Text shadow for heading */
+   margin-bottom: 0; /* Remove default bottom margin */
+  }
+ </style>
 </head>
-<body style="text-align:center; font-family:sans-serif; background:#fafbfc; margin:0; padding:2em;">
-  <h2 style="margin-bottom:1.5em; color:#24292f;">🎬 VoiceFlow Demo Video</h2>
-  <video style="max-width:100%; border-radius:8px; box-shadow:0 2px 8px #0001;" width="720" controls>
+<body>
+
+ <div class="main-content-container">
+  <h1>VoiceFlow Demo</h1>
+  <div class="video-wrapper">
+   <video controls>
     <source src="demo.mp4" type="video/mp4">
     Your browser does not support the video tag.
-  </video>
+   </video>
+  </div>
+ </div>
+
 </body>
 </html>
