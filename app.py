@@ -3,7 +3,6 @@ import os
 import json
 import logging
 import uvicorn
-import base64
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
@@ -181,7 +180,7 @@ async def websocket_endpoint(websocket: WebSocket):
 
     # --- Service Initialization ---
     murf_service = MurfWebSocketService(api_key=api_keys.get("MURF_API_KEY"))
-    llm_service = LLMService(api_key=api_keys.get("GEMINI_API_KEY"))
+    llm_service = LLMService(api_keys=api_keys)
 
     def send_websocket_message(message_type, **kwargs):
         if websocket.client_state.name == 'CONNECTED':

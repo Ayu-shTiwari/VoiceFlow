@@ -5,7 +5,7 @@ from tavily import TavilyClient
 
 logger = logging.getLogger(__name__)
 
-def web_search(query: str) -> List[Dict]:
+def web_search(query: str, api_key: str) -> List[Dict]:
     """
     Performs a web search using the Tavily API to find relevant information.
     Args:
@@ -14,12 +14,7 @@ def web_search(query: str) -> List[Dict]:
         A list of search results, summarized for the LLM.
     """
     logger.info(f"Performing web search for query: {query}")
-    try:
-        api_key = os.getenv("TAVILY_API_KEY")
-        if not api_key:
-            logger.error("TAVILY_API_KEY environment variable not set.")
-            return [{"error" : "Search API key is not configured."}]
-         
+    try: 
         tavily = TavilyClient(api_key = api_key)
         response = tavily.search(
             query=query,
@@ -36,10 +31,9 @@ def web_search(query: str) -> List[Dict]:
         return [{"error": "An error occurred while performing the search."}]
     
     
-def get_news(topic: str) -> str:
+def get_news(topic: str, api_key: str) -> str:
     logger.info(f"Get some news on topic '{topic}'.")
     try:
-        api_key = os.getenv("TAVILY_API_KEY")
         tavily = TavilyClient(api_key=api_key)
         response = tavily.search(query=f"latest news on {topic}", topic="news", search_depth="basic", max_results=3)
         results = response.get("results", [])

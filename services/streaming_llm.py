@@ -12,9 +12,9 @@ logger = logging.getLogger(__name__)
 
 class LLMService:
     """Handles interaction with the Google Gemini LLM."""
-    def __init__(self, api_key: str):
-        self.api_key = api_key
-        genai.configure(api_key=self.api_key)
+    def __init__(self, api_keys: Dict[str, str]):
+        self.api_keys = api_keys
+        genai.configure(api_key=self.api_keys.get("GEMINI_API_KEY"))
 
       # Model - Personification
         yagami_persona_instruction = (
@@ -72,16 +72,18 @@ class LLMService:
             tool_result = None
             if self._should_get_weather(transcript):
                 location = self._extract_location(transcript)
-                tool_result = await get_weather(location)
+                tool_result = await get_weather(location, self.api_keys.get("WEATHER_API_KEY"))
+                
             elif self._should_get_news(transcript):
                 topic = self._extract_news_topic(transcript)
                 # Tavily's functions are not async, so we run them in an executor
                 loop = asyncio.get_running_loop()
-                tool_result = await loop.run_in_executor(None, get_news, topic)
+                tool_result = await loop.run_in_executor(None, get_news, topic, self.api_keys.get("TAVILY_API_KEY"))
+                
             elif self._should_web_search(transcript):
                 query = self._extract_search_query(transcript)
                 loop = asyncio.get_running_loop()
-                tool_result = await loop.run_in_executor(None, web_search, query)
+                tool_result = await loop.run_in_executor(None, web_search, query, self.api_keys.get("TAVILY_API_KEY"))
 
 
             gemini_formatted_history = [

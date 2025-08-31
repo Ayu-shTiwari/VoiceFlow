@@ -1,15 +1,11 @@
 import os
 import httpx
 import logging
-from typing import List, Dict, Any
 
 logger = logging.getLogger(__name__)
 
-async def get_weather(location: str) -> str:
+async def get_weather(location: str, api_key: str) -> str:
     logger.info(f"Get weather for location '{location}'")
-    api_key = os.getenv("WEATHER_API_KEY")
-    if not api_key:
-        return "Error: Weather API key is not configured."
     
     url = f"http://api.openweathermap.org/data/2.5/weather?q={location}&appid={api_key}&units=metric"
     async with httpx.AsyncClient() as client:
