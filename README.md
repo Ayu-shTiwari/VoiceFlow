@@ -1,10 +1,10 @@
-<div align="center">
 
 # 🎙️ VoiceFlow AI : Your Personalised Chat Bot 
-### with some personality twist
+-><b>WITH SOME PERSONALITY TWIST<-
 
 ##
 **A proof-of-concept for a fully voice-controlled AI assistant that can remember your conversations.**
+
 
 ## Project Demo
 
@@ -14,6 +14,8 @@
 
 [Try VoiceFlow Live](https://voiceflow-o1.onrender.com) 
 ---
+
+<div align="center">
 
 ## 🌟 Features
 
