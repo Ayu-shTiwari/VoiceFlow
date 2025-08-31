@@ -6,8 +6,14 @@
 ##
 **A proof-of-concept for a fully voice-controlled AI assistant that can remember your conversations.**
 
-## 🚀 Live Demo
+## Project Demo
+
+🎬 **Demo Video:** [demo.mp4](https://ayu-shtiwari.github.io/VoiceFlow)
+
+> The `demo.mp4` file demonstrates the SeekReality platform in action, showing the process of uploading media and detecting deepfakes in real time.
+
 [Try VoiceFlow Live](https://voiceflow-o1.onrender.com) 
+---
 
 ## 🌟 Features
 
