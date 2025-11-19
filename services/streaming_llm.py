@@ -29,7 +29,7 @@ class LLMService:
         
         
         self.model = genai.GenerativeModel(
-            'gemini-1.5-flash-latest',
+            'gemini-2.5-flash',
             system_instruction=yagami_persona_instruction,
         )
     def _should_get_weather(self, transcript: str) -> bool:
